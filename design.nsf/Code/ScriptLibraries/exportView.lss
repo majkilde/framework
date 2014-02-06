@@ -1,0 +1,565 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+%REM
+	Library exportView
+	Created Jan 6, 2011 by Jakob Majkilde/NDK/GEAP
+	Description: Comments for Library
+%END REM
+Option Public
+Option Declare
+Use "cls.system"
+Use "cls.utils"
+
+%REM
+	Rev 6.9 majkilde 10.04.2012
+	- GetColumnType now uses the undocumentet NotesViewColumn.IsConstant to get the right type	
+	Rev 6.8 majkilde 19.01.2011
+	- Fix an error in the sheetname calculation
+	Rev 1.0.5 majkilde 24.03.2011
+	- Fixed a problem with the range size
+	Rev 1.05 majkilde 1.02.20
+	- Fixed a problem with long viewnames
+%END REM
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class ExportView As AbstractObject
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+%REM
+	Class ExportView
+	Description: Comments for Class
+%END REM
+Class ExportView As AbstractObject
+	Private ws As NotesUIWorkspace
+	Private db As NotesDatabase
+	
+	Private sourceView As NotesView 'the current view
+	Private sourceColl As NotesDocumentCollection 'the selected documents/documents to export from the current view
+	
+	Private excel As Variant
+	Private book As Variant
+	Private sheet As Variant
+
+	Private mapping() As Integer 'maps column headers with view data
+	
+	Private cols As Integer 'number of columns in the final excel sheet
+	Private rows As Integer 'number of rows
+	
+	Private options List As String 'options,e.g. setoption( "unique=true;" ) to ensure that each document is only exported once (in categorized views) 
+	
+	Private t As Stopwatch
+	
+	%REM
+		Sub New
+		Description: Comments for Sub
+	%END REM
+	Sub New()
+		Set ws = New NotesUIWorkspace
+		Set db = session.currentDatabase
+	End Sub
+	
+	%REM
+		Function run
+		exportAllDocs: true=all documents in view, false = selected documents
+	%END REM
+	Function run( exportAllDocs As Boolean )
+		set t = New Stopwatch
+	
+		Print "Export: Fetch the view"		
+		Set sourceView = ws.CurrentView.View 
+		
+		Print "Export: Create a new Excel sheet"
+		Call createExcel()
+		Call createTheHeader()
+		
+		Call t.start( "Export" )
+		If exportAllDocs Then
+			Print "Exporting all documents"
+			Call exportAll()
+		Else
+			Call setOption( session.Getenvironmentstring("ViewExportOptions", False ))
+			Call session.Setenvironmentvar("ViewExportOptions", "", False ) 'clear the option flag from notes.ini
+			Select Case LCase( getOption( "sorted" ))
+			Case "true":
+				Print "Exporting selected documents, sorted"
+				Call setOption( db.Unprocesseddocuments )
+				Call exportAll()
+			Case Else:
+				Print "Exporting selected documents, unsorted"
+				Call exportSelected()
+			End Select
+			
+		End If
+		Print "Data exported in " & t.readms( "Export" ) & " ms"
+		
+		Print "Export: Launching Excel"
+		Call launch( True )
+
+		Print "Export: Done"
+		Print ""
+	End Function
+	
+	%REM
+		Function doHeader
+		Description: Comments for Function
+	%END REM
+	Private Function createTheHeader()
+		Dim hasResponsOnlyColumn As Boolean
+		Dim col As Integer
+		col = 0 
+		
+		ReDim mapping( sourceView.ColumnCount )
+		Dim idx As Integer
+		idx = 0 
+		
+		
+		'header info
+		hasResponsOnlyColumn = False
+		ForAll c In sourceView.Columns
+			If c.IsResponse Then hasResponsOnlyColumn = True
+			Select Case getColumnType( c )
+			Case "HIDE": 'don't show the column
+				mapping( idx ) = -1
+				idx = idx + 1 'the data entry
+			Case "CONST": 'don't show the column, and dont inc the mapping array,as these values is not included in the data set
+				mapping( idx ) = -1
+			Case Else
+				col = col+1 'the column in excel
+				If c.title = "" Then
+					sheet.cells( 1, col ).value = |'| & "Column " & col
+				Else
+					sheet.cells( 1, col ).value = |'| & c.title
+				End If
+				
+				mapping( idx ) = col
+				
+				idx = idx + 1 'the data entry
+		End Select
+			
+		End ForAll
+	End Function
+	
+	Function getColumnType( column As Variant ) As String 
+		Dim c As NotesViewColumn 
+		Set c = column 
+		Dim s As String 
+		
+		'Columns with no data /constants is not included in the ViewColumns ... 
+		If c.Formula = |""| Then s = "CONST" 
+		If c.Isconstant Then s = "CONST"                 
+
+		If s <> "" Then getColumnType = s : Exit Function 
+		
+		'should the column be hidden? 
+		If c.IsHidden Then s = "HIDE" 
+		If c.IsResponse Then s = "HIDE" 
+		If c.IsIcon Then s = "HIDE" 
+		If c.Ishidedetail Then s = "HIDE" 
+
+		getColumnType = s 
+	End Function 
+	
+	
+	%REM
+		Function createExcel
+		Description: Comments for Function
+	%END REM
+	Private Function createExcel()
+		'create the Excel object		 
+		Set excel = CreateObject( "Excel.application" ) 
+		excel.visible = False
+		'excel.referencestyle = 2 
+		
+		Set book = excel.Workbooks.add()
+		Set sheet = excel.workbooks(1).worksheets(1) 
+		
+	End Function
+	
+	%REM
+		Function setOption
+		Description: Comments for Function
+	%END REM
+	Function setOption( options As Variant )
+		
+		Select Case TypeName( options )
+			Case "NOTESDOCUMENTCOLLECTION":
+				Set sourceColl = options
+				
+			Case "STRING":
+				Dim v As Variant
+				v = Split(options & ";", ";" )
+				
+				Dim param As String
+				Dim value As String
+				ForAll entry In v
+					If entry <> "" Then
+						If InStr( entry, "=" ) Then
+							param = StrLeft( entry, "=" )
+							value = StrRight( entry, "=" )
+						Else
+							param = entry
+							value = ""
+						End If
+						
+						me.options( LCase( param )) = value
+					End If					
+				End ForAll
+				
+			Case "NOTESVIEW":
+				Set sourceView = options
+		End Select
+	End Function
+	
+	%REM
+		Function hasOption
+		Description: Comments for Function
+	%END REM
+	Private Function hasOption( param As String ) As Boolean
+		hasOption = IsElement( options( LCase( param )))
+	End Function
+	
+	
+	%REM
+		Function getOption
+		Description: Comments for Function
+	%END REM
+	Private Function getOption( param As String ) As String
+		If hasOption( param ) Then
+			getOption = options( LCase( param ))
+		Else
+			getOption = ""
+		End If
+	End Function
+	
+	%REM
+		Function exportAll
+		Description: Comments for Function
+	%END REM
+	Function exportAll()
+		'Dim nav As NotesViewNavigator
+		Dim nav2 As NotesViewEntryCollection
+		
+		Dim count As Long 'number af documents to export 
+		Dim doc As NotesDocument 
+		
+		Dim exported List As Boolean 'keep track of the exported documents - used withthe unique option
+		
+		'notice:
+		'view.Allentries might fail -> http://www-01.ibm.com/support/docview.wss?uid=swg21264910
+		'but it is a lot faster than view.CreateViewNav()
+		
+		'Set nav = sourceView.Createviewnav() 
+		Set nav2 = sourceView.Allentries 
+		count = nav2.Count 'optional, use the VwCount method
+		
+		'init/dims
+		Dim row As Long 
+		Dim col As Integer 
+		Dim i As Integer
+		Dim value As Variant 
+		
+		'export view to excel
+		Dim entry As NotesViewEntry
+		'Set entry = nav.Getfirstdocument()
+		Set entry = nav2.Getfirstentry()
+		
+		Dim exceldata As Variant
+		ReDim exceldata( count, UBound( entry.ColumnValues )) 
+		
+		Dim bar As New Progress( count )
+		
+		row = 0 
+		Do Until entry Is Nothing 
+			
+			Call bar.print( "Exporting: %1 completed", bar.increment )
+			
+			If Not entry.Isdocument Then GoTo nextentry
+			If Not sourceColl Is Nothing Then
+				'only export selected documents - check if the current doc is in the selections
+				Set doc = entry.Document
+				If Not sourceColl.Contains(doc) Then GoTo nextentry
+			End If
+			
+			If hasOption( "unique" ) Then
+				If IsElement( exported( entry.Noteid )) Then 
+					GoTo nextentry 'this document are allready exported
+				else
+					exported( entry.noteid ) = True 'add this doc to the list
+				End if
+			End If
+			
+			col = 0
+			For i = 0 To UBound( entry.ColumnValues ) 
+				Dim idx As Integer
+				idx = mapping( i )
+				If idx >= 0 then
+					value = entry.ColumnValues( i ) 
+					If IsArray( value ) Then value = Join( value, ", " ) 
+					
+					exceldata( row, col ) = value
+					col = col+1
+				End If
+				
+			Next 
+			row = row+1
+			
+nextentry: 
+			'Set entry = nav.GetNext( entry ) 
+			Set entry = nav2.Getnextentry(entry)
+		Loop 
+		
+		cols = col
+		rows = row
+		
+		sheet.Range(sheet.Cells(2, 1),sheet.Cells(2+rows, cols)).Value=exceldata 
+		
+	End Function
+	
+	
+	
+	
+	%REM
+		Function run
+		Description: Comments for Function
+	%END REM
+	Private Function exportSelected()
+		Dim coll As NotesDocumentCollection
+		Dim count As Long 'number af documents to export 
+		Dim doc As NotesDocument 
+		
+		Set coll = db.UnprocessedDocuments
+		count = coll.count
+		Print count & " selected"
+		'Sleep 1
+	
+		'init/dims
+		Dim row As Long 
+		Dim col As Integer 
+		Dim i As Integer
+		
+		Dim value As Variant 
+		
+		Dim viewNavigator As NotesViewNavigator 
+		Set viewNavigator = sourceView.CreateViewNav 
+		Dim entry As NotesViewEntry 
+		
+		row = 0 
+		Dim errcnt As Integer
+		
+		Set entry = viewNavigator.Getfirstdocument()
+		Dim exceldata As Variant
+		ReDim exceldata( count, UBound( entry.ColumnValues )) 
+		
+		Dim bar As New Progress( count )
+		
+		'export view to excel
+		Set doc = coll.GetFirstDocument 
+		Do Until doc Is Nothing 
+			col = 0
+			Call bar.print( "Exporting: %1 completed", bar.increment )
+			
+			Set entry = viewNavigator.GetEntry( doc ) 
+			If entry Is Nothing Then 
+				errcnt = errcnt+1
+				Print errcnt, "Can't find entry: " & doc.Noteid, sourceView.Name
+				GoTo NEXTDOC
+			End if 
+			
+			For i = 0 To UBound( entry.ColumnValues ) 
+				Dim idx As Integer
+				idx = mapping( i )
+				If idx >= 0 Then
+					value = entry.ColumnValues( i ) 
+					
+					If IsArray( value ) Then value = Join( value, ", " ) 
+					exceldata( row, col ) = value 
+					col = col+1
+				End If
+			Next 
+			
+			row = row+1
+NEXTDOC: 
+			Set doc = coll.GetNextDocument( doc ) 
+		Loop 
+		
+		cols = col
+		rows = row
+		
+		sheet.Range(sheet.Cells(2, 1),sheet.Cells(2+rows, cols)).Value=exceldata 
+		
+	End Function
+	
+	
+	Private Function getCellIndex( col As Integer, row As Integer ) As String
+		Const AZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		Dim index As String
+		
+		Dim l As Integer
+		Dim d As Integer
+		Dim r As Integer
+		
+		l = Len( AZ )
+		d = col \ l
+		r = col Mod l 
+		
+		If r = 0 Then r = l : d = d-1
+		
+		If d > 0 Then
+			index = Mid(AZ,d,1 )
+		End If
+		
+		index = index & Mid( AZ,r,1 ) 
+		index = index & CStr( row )
+		
+		getCellIndex = index
+	End Function
+	
+	%REM
+	Function formatSheet
+	Description: Comments for Function
+	%END REM
+	Private Function launch( doFormat As Boolean )
+		Dim idx As Integer
+		Dim v As Variant
+		Dim s As String
+		
+		If doFormat Then
+			'Format
+			excel.ActiveWorkbook.Names.Add "Data", "R2C1:R" & rows & "C" & cols
+			
+			sheet.Range("A1:" + getCellIndex( cols, 1 )).Select
+			excel.Selection.Font.Bold = True
+			excel.Selection.Interior.ColorIndex = 11
+			excel.Selection.Interior.Pattern = 1 'xlSolid
+			excel.Selection.Font.ColorIndex = 34
+
+	sheet.Rows("1:1").Select	
+	excel.Selection.AutoFilter		
+			
+			'autofit columns
+			sheet.Cells.Select
+			sheet.Cells.EntireColumn.AutoFit
+			
+			'freeze
+			'sheet.Rows("2:2").Select
+			sheet.Range( "B2:B2" ).Select
+			excel.ActiveWindow.FreezePanes = True
+			
+			'autoformat
+			'sheet.Range( getCellIndex( 1, 1 ) & ":" & getCellIndex( col,row )).Select
+			'excel.Selection.AutoFormat 12
+			
+			'name
+			Dim viewname As String
+			viewname = sourceView.Name
+			viewname = Replace( viewname, "\", "-" )
+			viewname = Replace( viewname, "/", "-" )
+			viewname = Replace( viewname, "?", "." )
+			viewname = Replace( viewname, "*", " " )
+			viewname = Replace( viewname, "[", "{" )
+			viewname = Replace( viewname, "]", "}" )
+			If Len( viewname ) > 31 Then
+				viewname = Left( viewname, 28 ) & "..."
+			End If
+			If viewname <> "" then
+				sheet.name = viewname
+			End If
+			
+			'format
+			For idx = 1 To cols
+				v = excel.cells( 2,idx ).value
+				If IsDate( v ) Then
+					
+				ElseIf IsNumeric( v ) Then
+					s = getCellIndex( idx, 0 )
+					s = Left( s, Len( s )-1 )
+					sheet.columns( s & ":" & s ).Select
+					excel.selection.NumberFormat = "#.##0" 
+				End If
+			Next
+			
+		End If
+		
+		'launch
+		sheet.Range( "B2:B2" ).Select
+		excel.visible = True
+		
+		
+	End Function
+	
+	private Function VwCount(vw As NotesViewNavigator) As Long 
+		'Code found at http://www.redbooks.ibm.com/redbooks/pdfs/sg245602.pdf 
+		'and then modified by Majkilde (NotesView->NotesViewNavigator) 
+		
+		'*** Pass in a NotesView object 
+		'*** Returns the number of docs in the view 
+		'*** Note: If the view is categorized - this function 
+		'*** counts the top-most categories only 
+		Dim docLo As NotesViewEntry 
+		Dim docHi As NotesViewEntry 
+		Dim done As Integer 
+		Dim fellOff As Integer 
+		Dim rCtr As Integer 
+		Dim inc As Long 
+		Dim posLo As Long 
+		Dim posHi As Long 
+		'*** Initialise 
+		VwCount& = 0 
+		done% = False 
+		fellOff% = False 
+		rCtr% = 0 
+		If (vw Is Nothing) Then 
+			'*** No view 
+			Exit Function 
+		End If 
+		Set docLo = vw.GetFirst() 
+		If (docLo Is Nothing) Then 
+			'*** Empty view 
+			Exit Function 
+		End If 
+		rCtr% = rCtr% + 1 
+		posLo& = 1 
+		'*** Start somewhere (must be a power of 2) 
+		inc& = 512 
+		'*** Scan forward 'til we fall off the end 
+		'*** (but double our increments each loop) 
+		Do While (Not done%) 
+			Set docHi = vw.GetNth(posLo& + inc&) 
+			rCtr% = rCtr% + 1 
+			While (docHi Is Nothing And Not done%) 
+				'*** We fell off the end - come on back 
+				fellOff% = True 
+				If (inc& = 1) Then 
+					'*** If we get this far we know we found 
+					'*** what we're after 
+					VwCount& = posLo& 
+					done% = True 
+				Else 
+					'*** Try a smaller increment 
+					inc& = inc& \ 2 
+					Set docHi = vw.GetNth(posLo&+inc&) 
+					rCtr% = rCtr% + 1 
+				End If 
+			Wend 
+			'*** Jump ahead 
+			If (Not done%) Then 
+				posLo& = posLo& + inc& 
+				If (fellOff%) Then 
+					'*** If we've seen the end, 
+					'*** we halve our increments 
+					If (inc& > 1) Then 
+						'*** but only if we can halve them 
+						inc& = inc& \ 2 
+					Else 
+						'*** Hey - we're done 
+						VwCount& = posLo& 
+						done% = True 
+					End If 
+				Else 
+					'*** If we haven't a clue how big this is, 
+					'*** we double our increments 
+					inc& = 2 * inc& 
+				End If 
+			End If 
+		Loop 
+	End Function
+End Class

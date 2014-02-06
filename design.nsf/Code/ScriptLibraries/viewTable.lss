@@ -1,0 +1,274 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+%REM
+	Library viewTable
+	Created May 8, 2012 by Jakob Majkilde/MAJKILDE
+	Parameters
+%END REM
+Option Public
+Option Declare
+Use "cls.system"
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class ViewTable As AbstractObject 
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+
+%REM 
+        Type ViewColumn 
+        Description: Comments for Type 
+%END REM 
+Private Type ViewColumn 
+	label As String 
+	formula As String 
+	width As Integer 
+	options As String         
+End Type
+
+%REM 
+        Class ViewTable 
+        Sample: 
+        - code below will create a table with 3 columns (first column will always be a link) 
+        - and 2 rows (one header row, and one data row) 
+        dim vt as new ViewTable( body ) 
+        call vt.addColumn( "Name", "@name([cn];username")", 10, "" ) 
+        call vt.addColumn( "Date", "created", 5, "" ) 
+        call vt.createTable( "" ) 
+        call vt.addRow( doc ) 
+        call vt.close() 
+%END REM 
+Class ViewTable As AbstractObject 
+	Private db As NotesDatabase 
+	Private body As NotesRichTextItem 
+	Private table As NotesRichTextTable 
+	Private rtnav As NotesRichTextNavigator 
+	Private tableOptions As AbstractParams 
+	
+	Private columns List As ViewColumn 
+	Private columnCount As Integer 
+	Private rowCount As Integer 
+	
+	Private lastRowData As String 'used to remove duplets 
+	
+	Private isTruncatedP As Boolean 
+	
+	%REM 
+                Sub new 
+                body: target RichText item - new table is appended to this 
+	%END REM 
+	Sub New( body As NotesRichTextItem ) 
+		Set db = session.Currentdatabase 
+		Set me.body = body 
+		
+		isTruncatedP = False 
+		Call addColumn( "", "", 1, "link" ) 'add the first column (with the link) 
+	End Sub 
+	
+	%REM 
+                Property Get rows 
+                Description: Comments for Property Get 
+	%END REM 
+	Property Get rows As Integer 
+		rows = rowCount 
+	End Property 
+	
+	%REM 
+                Property Get cols 
+                Description: Comments for Property Get 
+	%END REM 
+	Property Get cols As Integer 
+		cols = columnCount 
+	End Property 
+	
+	%REM 
+                Property Get isTruncated 
+                Description: Comments for Property Get 
+	%END REM 
+	Property Get isTruncated As Boolean 
+		isTruncated = isTruncatedP 
+	End Property 
+	
+	
+	
+	%REM 
+                Function addColumn 
+                Description: Comments for Function 
+	%END REM 
+	Function addColumn( label As String, formula As String, columnWidth As Integer, options As String ) 
+		If Not table Is Nothing Then Error 9000, "You must add columns before you create the table" 
+
+		On Error GoTo eh 
+		Dim c As ViewColumn 
+		c.label = label 
+		c.formula = formula 
+		c.width = columnWidth 
+		c.options = options 
+		
+		columnCount = columnCount+1 
+		columns( columnCount ) = c 
+		
+done: 
+		Exit Function 
+eh: 
+		Error Err, getErrorInfo( Me ) 
+	End Function 
+	
+	%REM 
+                Function createTable 
+                options: 
+                        MaxRows=250; 
+                        FontSize=255; (255=STYLE_NO_CHANGE) 
+	%END REM 
+	Function createTable( options As String ) 
+		If columnCount = 0 Then Error 9000, "You must add columns before you create the table" 
+		
+		On Error GoTo eh 
+		Set tableOptions = New AbstractParams( options ) 
+		If Not tableOptions.hasParam( "maxrows" ) Then Call tableOptions.setParam( "maxrows", "250" ) 'Lotus Notes limitation - tables can't exceed 255 rows 
+		
+		'define the columnsstyles (to set the width) 
+		Dim styles() As NotesRichTextParagraphStyle 
+		ReDim styles( 1 To columnCount ) 
+		Dim i As Integer 
+		For i = LBound( styles ) To UBound( styles ) 
+			Set styles(i) = session.CreateRichTextParagraphStyle 
+			styles(i).LeftMargin = 0 
+			styles(i).FirstLineLeftMargin = 0 
+			styles(i).RightMargin = RULER_ONE_CENTIMETER * columns(i).width 
+		Next 
+		
+		Call body.Appendtable(2, columnCount, "", RULER_ONE_INCH, styles ) 
+		
+		'get the table 
+		Set rtnav = body.CreateNavigator 
+		Call rtnav.FindFirstElement(RTELEM_TYPE_TABLE) 'find the table 
+		Set table = rtnav.GetElement 
+		
+		'set the table 
+		Dim color As NotesColorObject 
+		Set color = session.CreateColorObject 
+		Call color.Setrgb( 239, 239, 239 ) 
+		Call table.Setalternatecolor(Color) 
+		Call color.Setrgb( 255, 255, 255 ) 
+		Call table.SetColor(Color) 
+		table.Style = TABLESTYLE_ALTERNATINGROWS 
+		
+		'add the header 
+		Dim style As NotesRichTextStyle 
+		Set style = session.Createrichtextstyle() 
+		style.bold = False 
+		If tableOptions.hasParam("fontsize") Then style.Fontsize = CInt( tableoptions.getParam("fontsize")) 
+		
+		Dim headerStyle As NotesRichTextStyle 
+		Set headerStyle = session.Createrichtextstyle() 
+		headerStyle.bold = True 
+		If tableOptions.hasParam("fontsize") Then headerstyle.Fontsize = CInt( tableoptions.getParam("fontsize")) 
+		
+		Call rtnav.FindFirstElement(RTELEM_TYPE_TABLECELL) 
+		For i = 1 To columnCount 
+			Call body.BeginInsert(rtnav) 
+			Call body.Appendstyle(headerStyle) 
+			Call body.AppendText(columns(i).label) 
+			Call body.Appendstyle(style) 
+			Call body.EndInsert 
+			Call rtnav.FindNextElement(RTELEM_TYPE_TABLECELL) 
+		Next 
+		
+done: 
+		Exit Function 
+eh: 
+		Error Err, getErrorInfo( Me ) 
+	End Function 
+	
+	%REM 
+                Function addRow 
+                Returns true if a row is added (false if row limit is exceeded or document is invalid) 
+	%END REM 
+	Function addRow( doc As NotesDocument, options As String ) As Boolean 
+		If table Is Nothing Then Error 9000, "You must create the table first" 
+		
+		On Error GoTo eh 
+		Dim maxRows As Integer 
+		maxRows = CInt( tableOptions.getParam( "maxrows" )) 
+		
+		'check 
+		addRow = False 
+		If isTruncated Then Exit Function 'limit exceded 
+		If doc.Isdeleted Then Exit Function 
+		If Not doc.Isvalid Then Exit Function 
+		
+		Dim currentRowData As String 
+		
+		rowCount = rowCount+1 
+		If rowCount >= maxRows Then 
+			isTruncatedP = True 
+		End If 
+		
+		
+		'get the values 
+		Dim value As Variant 
+		Dim values() As String 
+		Dim formula As String 
+		Dim i As Integer 
+		
+		ReDim values( columnCount ) 
+		For i = 2 To columnCount 
+			formula = columns(i).formula 
+			If formula <> "" Then 
+				value = Evaluate( formula, doc ) 
+				values( i ) = cString( value ) 
+			Else 
+				values( i ) = "" 
+			End If 
+		Next 
+		currentRowData = Join( values ) 
+		
+		'duplet check 
+		If currentRowData = lastRowData Then Exit Function 
+		lastRowData = currentRowData 
+		
+		Call table.Addrow() 'add a new row 
+		
+		'insert the link in the first column 
+		Call body.BeginInsert(rtnav) 
+		Call body.Appenddoclink(doc, getLinkComment(doc)) 
+		Call body.EndInsert 
+		Call rtnav.FindNextElement(RTELEM_TYPE_TABLECELL)         
+		
+		
+		For i = 2 To columnCount 'fill the data columns with values from the document 
+			Call body.BeginInsert(rtnav) 
+			Call body.AppendText(values( i )) 
+			Call body.EndInsert 
+			Call rtnav.FindNextElement(RTELEM_TYPE_TABLECELL) 
+		Next 
+		
+		'row successfully added 
+		addRow = True 
+		
+done: 
+		Exit Function 
+eh: 
+		Error Err, getErrorInfo( Me ) 
+	End Function 
+	
+	Function Close() 
+		If table Is Nothing Then Error 9000, "You must create the table first" 
+		On Error GoTo eh 
+		
+		If rows > 0 Then 
+			Call table.Removerow() 'remove the last (extra) row 
+		End If 
+		
+		Dim style As NotesRichTextStyle 
+		Set style = session.Createrichtextstyle() 
+		If tableOptions.hasParam("fontsize") Then 
+			style.Fontsize=10 
+			Call body.Appendstyle(style) 
+		End If 
+		
+done: 
+		Exit Function 
+eh: 
+		Error Err, getErrorInfo( Me ) 
+	End Function 
+End Class

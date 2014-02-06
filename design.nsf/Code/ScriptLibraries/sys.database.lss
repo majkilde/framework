@@ -1,0 +1,201 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Declare
+%REM
+**************************************************************************************************************************'
+COPYRIGHT 2003-2010 by MAJKILDE Aps
+**************************************************************************************************************************'
+This library is programmed and owned by MAJKILDE Aps
+Under the copyright laws, neither the documentation nor the software may be copied, photocopied, 
+reproduced, translated, resold, or reduced to any electronic medium or machine-readable form, 
+in whole or in part, without the prior written consent of MAJKILDE Aps, except in the manner described 
+in the documentation or the applicable licensing agreement governing the use of the software.
+**************************************************************************************************************************'
+%ENDREM
+Option Public
+
+Use "cls.system"
+
+
+%REM
+Rev 6.0.1
+- Better performance on the UpdateVersionOnProfile
+Rev 6.0
+- Added a new options parameter
+Rev 5.6 
+- Added UpdateVersionOnProfile
+
+Rev 5.1.1 
+- Better event handling
+
+%END REM
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Public Class Database As AbstractObject
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+Public Class Database As AbstractObject
+'###################################################################################################
+	Private source As NotesUIDatabase
+	Private deleteCount As Long
+	Private db As NotesDatabase
+	'Private deletelog As NotesDocument
+	'Private deleteitem As NotesRichTextItem
+	
+	Private options List As String
+	
+	%REM
+		Called from Database PostOpen event
+		Options, string: GetVersion=yes;AutoDeleteResponses=yes;Delete=yes|mark
+	%END REM
+	Sub new( source As NotesUIDatabase, options As string )
+		Set db = session.currentDatabase
+		Set Me.source = source
+		
+		Dim v As Variant
+		v = Split( options, ";" )
+		ForAll param In v
+			If param <> "" Then
+				me.options( LCase(StrLeft( param, "=" ))) = StrRight( param, "=" )
+			End If
+		End ForAll
+		If IsElement( me.options( "getversion" )) Then Call UpdateVersionOnProfile()
+		
+		On Event Querydocumentdelete From source Call Querydocumentdelete
+		On Event Postdocumentdelete From source Call Postdocumentdelete
+		
+		If Not IsElement( me.options( "delete" )) Then me.options( "delete" ) = "yes"
+	End Sub
+	
+	Public Sub Querydocumentdelete(Source As Notesuidatabase, Continue As Variant)
+		'prompt
+		Dim ws As New NotesUIWorkspace
+		
+		If IsElement( me.options( "autodeleteresponses" )) Then
+			If ws.Prompt( PROMPT_YESNO, "Delete documents?", "This will permanently delete the " & source.Documents.Count & " selected document(s) and all responses. Continue?" ) Then
+			Else
+				continue = False
+			End If	
+		End if
+	End Sub
+	
+	Public Sub Postdocumentdelete(Source As Notesuidatabase)
+		'delete all responses
+		'Dim item As NotesItem
+		'Set deletelog = db.CreateDocument
+		'Call deletelog.ReplaceItemValue( "form", "admin.systemDocument" )
+		'Call deletelog.ReplaceItemValue( "$PublicAccess", "1" )
+		'Set item = deleteLog.ReplaceItemValue( "createdBy", session.username )
+		'item.IsAuthors = True
+		'Call deletelog.ReplaceItemValue( "systemDocument", 1 )
+		'Call deletelog.ReplaceItemValue( "subject", "Documents deleted by " & session.commonusername )
+		'Call deletelog.ReplaceItemValue( "categories", "Deletions" )
+		'Set deleteItem = deletelog.CreateRichTextItem( "body" )
+		
+		Call deleteCollection( source.Documents )
+		Print deleteCount & " documents deleted"
+		
+		'On Error Resume Next
+		'Call deletelog.ComputeWithForm( False, False )
+		'Call deletelog.Save( True, False )
+		'On Error Goto 0 
+	End Sub
+	
+	Sub Postopen(Source As Notesuidatabase)
+	End Sub
+	
+	Public Function deleteCollection( coll As NotesDocumentCollection )
+		'delete all responses
+		Dim resp As NotesDocument
+		Dim nextDoc As NotesDocument
+		
+		If Not coll Is Nothing Then
+			Set resp = coll.GetFirstDocument
+			Do Until resp Is Nothing
+				Set nextDoc = coll.GetNextDocument( resp )
+				
+'				If Not deleteItem Is Nothing Then
+'					Call deleteItem.AppendText( resp.Created & " - " & resp.LastModified & " - " & resp.form( 0 ) & " - " & resp.subject( 0 ) & " (" & resp.UniversalID & ")"  )
+'					Call deleteItem.AddNewline( 1 )
+'				End If
+				
+				If IsElement( me.options( "autodeleteresponses" )) Then
+					Call deleteCollection( resp.Responses )
+				End If
+				
+				'only use this with soft deletions / or the stamp flag is set
+				If db.Getoption(DBOPT_SOFTDELETE) Or LCase( options( "delete" )) = "stamp" then
+					resp.deletedBy = session.username
+					resp.deletedDate = Now
+					resp.deleted = 1
+					Call resp.Save( True, False )
+				End If
+				
+				If LCase( options( "delete" )) = "yes" then
+					Call resp.Remove( True )
+				End if
+				deleteCount = deleteCount +1
+				
+				Set resp = nextDoc
+			Loop
+		End If
+		
+	End Function
+	
+	Public Function UpdateVersionOnProfile() 
+		'get the database version
+		On Error Goto DONE 'dont stop if something goes wrong
+		
+		Dim session As New NotesSession
+		Dim db As NotesDatabase
+		Set db = session.CurrentDatabase
+		
+		'get the (existing) profile document
+		Dim profile As NotesDocument
+		Dim profileColl As NotesDocumentCollection
+		Set profileColl = db.Getprofiledoccollection("Setup")
+		If profileColl.count = 0 Then Exit function
+		Set profile = db.GetProfileDocument( "Setup" )
+
+		'get the SharedField design note
+		Dim notecoll As NotesNoteCollection
+		Dim noteid As String
+		Dim note As NotesDocument
+		
+		'NotesNoteCollection can be very slow - try with the stored unid first				
+		If profile.versionUnid( 0 ) <> "" Then
+			On Error Resume next
+			Set note = db.Getdocumentbyunid(profile.versionUnid( 0 ))
+			On Error GoTo done
+			If Not note Is Nothing Then GoTo updateProfile	
+		End If
+		
+		'search for the design element
+		Set notecoll = db.CreateNoteCollection( False )
+		notecoll.SelectSharedFields = True
+		Call notecoll.BuildCollection
+		
+		noteid = notecoll.GetFirstNoteId
+		Do Until noteid = ""
+			Set note = db.GetDocumentByID( noteid )
+			If StrComp( note.GetItemValue( "$title" )( 0 ), "$TemplateBuild", 5 ) = 0 Then
+				GoTo updateProfile		
+			End If
+			
+			noteid = notecoll.GetNextNoteId( noteid )
+		Loop
+		'not found - exit function
+		GoTo done
+		
+updateProfile:
+		If profile.version( 0 ) <> note.GetItemValue( "$TemplateBuild" )( 0 ) Then
+			Call profile.ReplaceItemValue( "version", note.GetItemValue( "$TemplateBuild" )( 0 ))
+			Call profile.Replaceitemvalue( "versionUnid", note.Universalid )
+			
+			Print "New version: " & profile.version( 0 )
+			Call profile.Save( True, False )
+		End If
+		
+done:
+		
+	End Function
+End Class

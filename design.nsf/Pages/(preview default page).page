@@ -1,0 +1,48 @@
+<?xml version='1.0' encoding='utf-8'?>
+<note class='form' xmlns='http://www.lotus.com/dxl' version='9.0' maintenanceversion='1.0'
+ replicaid='C1257449003266B0'>
+<noteinfo noteid='272' unid='A7E63607BB246D77C1257129002947F0' sequence='57'>
+<created><datetime>20060306T083053,92+01</datetime></created>
+<modified><datetime dst='true'>20130502T105304,54+02</datetime></modified>
+<revised><datetime dst='true'>20130502T105304,53+02</datetime></revised>
+<lastaccessed><datetime dst='true'>20130502T105304,53+02</datetime></lastaccessed>
+<addedtofile><datetime dst='true'>20080514T111036,21+02</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name
+>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name
+>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name
+>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name></wassignedby>
+<item name='$BackgroundRepeat' sign='true'><text>6</text></item>
+<item name='$BackgroundR5' sign='true'>
+<rawitemdata type='1'>
+3QYBAJkAmQAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAH0AHAAAAAEA1AGPAQAAAAAAAAAAAAAA
+AAAAAAD2/zQAAAAAAAMAEwASAAAAAAAAAAAAAAAAAAAAAAAAAAAAYmFja2dyb3VuZC5wcmV2aWV3
+3gYBAJkA
+</rawitemdata></item>
+<item name='$HTMLCode' sign='true'>
+<rawitemdata type='1'>
+X/8QAAIADwAHAAAAAAAAAA==
+</rawitemdata></item>
+<item name='$TITLE'><textlist><text>(preview default page)</text><text>preview.default</text></textlist></item>
+<item name='$Info' sign='true'>
+<rawitemdata type='1'>
+hhgBAIAAAAAAAAAAAQABAP///wAQAAAA
+</rawitemdata></item>
+<item name='$Flags'><text>C34WQ</text></item>
+<item name='$DesignerVersion' sign='true'><text>7</text></item>
+<item name='$Fonts'>
+<rawitemdata type='1'>
+i/8oAAEABSZWZXJkYW5hAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+</rawitemdata></item>
+<item name='$Comment'><text>Rev 6.6</text></item>
+<item name='$$ScriptName' summary='false' sign='true'><text>preview.default</text></item>
+<item name='$Body' sign='true'>
+<rawitemdata type='1'>
+gQKC/1oAAQAAAAAAAAAAAKAFAACgBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAABAAAAAJSHAAAAAAAAAAAAAAAAAQAAAAQAAACDBAEAhf8IAAEAAAqBAoL/WgACAAMA
+AAAAAAAAoAUAAKAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEA
+AAAAlIcAAAAAAAAAAAAAAAABAAAABAAAAIMEAgDdBgAAhf+F/zIABQG/ClByZXZpZXcgYXJlYSAt
+IHNob3dzIHRoZSBzZWxlY3RlZCBkb2N1bWVudNIIAQBfX18A3gYAAIX/
+</rawitemdata></item></note>
+

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?><note class="filter" maintenanceversion="1.0" replicaid="C1257449003266B0" version="9.0" xmlns="http://www.lotus.com/dxl">
+<noteinfo noteid="1a8a" sequence="127" unid="5ABD3BA668FD4C8CC1257792002ED6AA">
+<created><datetime dst="true">20100902T103136,10+02</datetime></created>
+<modified><datetime dst="true">20130515T101808,93+02</datetime></modified>
+<revised><datetime dst="true">20130515T101808,92+02</datetime></revised>
+<lastaccessed><datetime dst="true">20130515T101808,92+02</datetime></lastaccessed>
+<addedtofile><datetime dst="true">20100902T165419,66+02</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/O=ExcellentService</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name></wassignedby>
+<item name="$TITLE" sign="true"><text>cls.utils</text></item>
+<item name="$Flags"><text>s34Q</text></item>
+<item name="$PublicAccess" sign="true"><text>1</text></item>
+<item name="$DesignerVersion" sign="true"><text>8.5.3</text></item>
+
+
+<item name="$Comment"><text>Rev 7.1</text></item></note>

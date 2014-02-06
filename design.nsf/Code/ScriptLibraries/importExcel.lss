@@ -1,0 +1,613 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+%REM
+	Library importExcel
+	Created Jan 11, 2011 by Jakob Majkilde/NDK/GEAP
+	Description: Comments for Library
+%END REM
+Option Public
+Option Declare
+Use "cls.system"
+Use "cls.document"
+
+
+%REM
+	Rev 6.7.4 majkilde 23.12.2011
+	Better error handling
+	Rev 6.7.3 majkilde 19.12.2011
+	- New options: update existing / multivalue import
+	- Save defaults
+	Rev 6.6.5 majkilde 15.12.2011
+	- some fixes (cField and readrow function )
+	- better error handling
+	Rev 1.0.1 majkilde 13.01.11
+	- Updated the form name handling (form is not required if field is in the Excel file)
+	- Fieldnames limited to 32 chars
+%END REM
+
+
+
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class ExcelImport As AbstractObject
+Declare Sub Initialize
+Declare Function importDialog()
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+%REM
+	Class ImportExcel
+	Description: Comments for Class
+%END REM
+Class ExcelImport As AbstractObject
+	Private ws As NotesUIWorkspace
+	Private db As NotesDatabase
+	
+	Private excel As Variant
+	Private book As Variant
+	Private sheet As Variant
+	Private excelFilename As String
+	
+	Private cols As Integer 'number of columns to import
+	Private header() As String
+	Private sample() As String
+	'Private fields List As Integer 'list of field names - jsut an easy way to check for a given name (same as header - but all in lowercase)
+	
+	Private formname As String
+	Private computeWithForm As Boolean
+	Private doUpdate As Boolean 'true if import should update existing documents
+	private doMultivalue As Boolean 'true if the update should append different values instead of replacing
+	Private updateView As NotesView
+	Private updateKey As Integer
+	Private fieldname As String
+	Private fieldvalue As string
+
+	private profile As NotesDocument
+	Private profileItems As Variant
+	
+	%REM
+		Sub New
+		Description: Comments for Sub
+	%END REM
+	Sub New()
+		Set ws = New NotesUIWorkspace
+		Set db = session.Currentdatabase
+		Set profile = db.GetprofileDocument( "ExcelImporter", session.Username )
+		profileItems = Split(|filename,form,fields,computeWIthForm,update,multivalues,view,key,fieldname,fieldvalue,fieldlist|,|,|)
+	End Sub
+	
+	
+	%REM
+		Function loadDefaults
+		Description: Comments for Function
+	%END REM
+	Function loadDefaults( dlg As NotesDocument )
+		ForAll itemname In profileItems
+			Call dlg.Replaceitemvalue(itemname, profile.Getitemvalue(Itemname))
+		End ForAll
+	End Function
+	
+	%REM
+		Function saveDefaults
+		Description: Comments for Function
+	%END REM
+	Function saveDefaults( dlg As NotesDocument )
+		ForAll itemname In profileItems
+			Call profile.Replaceitemvalue(itemname, dlg.Getitemvalue(Itemname))
+		End ForAll
+		Call profile.save( True, False )
+	End Function
+	
+	%REM
+		Function importWithDialog
+		Description: Comments for Function
+	%END REM
+	Function importWithDialog( dlg As NotesDocument ) As Boolean
+		On Error GoTo eh
+		Call saveDefaults( dlg )
+		importWithDialog = False
+		Dim cnt As Integer
+		
+		dlg.msg = ""
+		
+		If isOpen Then
+			If cols = 0 Then 
+				dlg.msg = "No column headers found in file"
+				Exit Function
+			End If
+			
+			Dim v As Variant 
+			Dim a As New Array( Null ) 
+			v = ArrayUnique( getFields(), 5) 
+			If UBound( getFields()) <> UBound( v ) Then 
+				Dim l List As String 
+				ForAll entry In getFields() 
+					If IsElement( l( entry )) Then 
+						Call a.add( entry ) 
+					End If 
+					l( entry ) = "" 
+				End ForAll 
+				dlg.msg = parseparam( "Duplicate fieldnames found: %1. Kindly adjust Excel sheet before importing", Join( a.elements, ", " )) 
+				Exit Function 
+			End If
+			
+			formname = dlg.form( 0 )
+			If ( formname = "" Or formname="none" ) And IsNull( ArrayGetIndex( getFields, "form", 5 )) Then
+				dlg.msg = "'Form is required'"
+			Else
+				computeWithForm = ( dlg.Getitemvalue("computeWithForm")( 0 ) = "1" )
+				doUpdate = ( dlg.Getitemvalue("update")( 0 ) = "1" )
+
+				If doUpdate Then
+					doMultivalue = ( dlg.Getitemvalue("multivalues")( 0 ) = "1" )
+					Set updateView = cacheManager.getView("*", dlg.view( 0 ))
+					If updateView Is Nothing Then
+						dlg.msg = "View not found"
+						GoTo done
+					End If
+					updateKey = ArrayGetIndex( header, dlg.Getitemvalue("key")( 0 ), 5)
+				Else
+					doMultivalue = false
+				End If
+				
+
+				fieldname = dlg.fieldname( 0 )
+				fieldvalue = dlg.fieldvalue( 0 )
+				
+				cnt = import()
+				Call setMessage("Imported " & cnt & " documents")
+				'dlg.msg = "Imported " & cnt & " documents"
+				importWithDialog = True
+			End If
+		Else
+			dlg.msg = "Please select a valid Excel file"	
+		End If
+		
+		
+done:
+		Exit Function
+eh:
+		Error Err, Err & " - " & getErrorInfo( Me )
+		
+	End Function
+	
+	
+	%REM
+		Function getFields
+		Description: Comments for Function
+	%END REM
+	Function getFields() As Variant
+		getFields = header
+	End Function
+	
+	%REM
+		Function loadFile
+		Description: Comments for Function
+	%END REM
+	Function loadFile( newfile As String ) As Boolean
+		On Error GoTo eh
+		loadfile = false
+		Call openFile( newfile )
+		If getHeader() Then
+			
+			Print "Found " cols & " columns in the file: " newfile
+			
+			loadfile = true
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function import
+		Process the excel file and create a notes document for each row
+	%END REM
+	Private Function import() As Integer
+		On Error GoTo eh
+		Dim row As Integer
+		row = 2
+		
+		Dim record As Variant
+		record = readrow( row )
+		Do While Not IsNull( record )
+			Select Case row
+			Case Is < 100:
+				Print "Reading row #" & row
+			Case Is < 1000:
+				If row Mod 10 = 0 Then
+					Print "Reading row #" & row
+				End If
+			Case else:
+				If row Mod 100 = 0 Then
+					Print "Reading row #" & row
+				End If
+			End Select
+			
+			Call createDocument( record )
+			row = row+1
+			record = readrow( row )
+		Loop
+		
+		Print "Done."
+		import = row-2
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function createDocument
+		Description: Comments for Function
+	%END REM
+	Private Function createDocument( record As Variant )
+		On Error GoTo eh
+		Dim isNew As Boolean
+		
+		Dim doc As NotesDocument
+		If doUpdate Then
+			Dim key As String
+			key = CStr(record( updateKey ))
+			Set doc = updateView.Getdocumentbykey(key, true)
+		End If	
+		
+		If doc Is Nothing then
+			Set doc = db.Createdocument()
+			doc.form = formname
+			Call doc.Replaceitemvalue("InheritedDBTitle", db.Title)
+			isNew = True
+		Else
+			isNew = false
+		End if
+		
+		'special fields 1
+		Dim item As NotesItem
+		Dim v As Variant
+		Call doc.Replaceitemvalue("CreatedBy", session.username)
+		Call doc.Replaceitemvalue("CreatedDate", Now)
+		Call doc.Replaceitemvalue("Imported", "1" )
+		Call doc.Replaceitemvalue("subject", "Imported: " & now)
+		Set item = doc.Replaceitemvalue("From", session.Username)
+		item.isAuthors = True
+		
+		If fieldname <> "" Then
+			Call doc.Replaceitemvalue(fieldname, fieldvalue)
+		End If
+		
+		'data from excel
+		Dim d As New AbstractDocument( doc )
+		Dim i As Integer
+		For i = 0 To cols-1
+			If doMultivalue then
+				Call d.appendItem( header( i ), cString( record( i )), 5 ) '5=unique+trim
+			else
+				Call doc.Replaceitemvalue(header(i), record( i ))
+			End if
+		Next
+		
+		'special fields 2
+		v = Evaluate(|@Unique("[Admin]" : From : CreatedBy)|, doc)
+		Set item = doc.Replaceitemvalue("authors", v)
+		item.isAuthors = True
+		
+		If computeWithForm then
+			Call doc.Computewithform(False, False)
+		End If
+		
+		If doc.Hasitem("readers") Then
+			Set item = doc.Getfirstitem("readers")
+			item.isReaders = True
+		End If
+		
+		Call doc.Save( True, False )
+		If isNew And doUpdate Then
+			Call updateView.refresh()
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function toString
+		Converts a record to a string (to be used in the subject field)
+	%END REM
+	Private Function toString( record As Variant ) As String
+		On Error GoTo eh
+		Dim a As New Array( Null )
+		Dim s As String
+		
+		ForAll entry In record
+			s = FullTrim( cString( entry ))
+			If s <> "" Then
+				Call a.add( s )
+			End If
+		End ForAll
+		
+		toString = Join( a.elements, ", " )
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function readrow
+		reads one row from excel. Returns null if empty
+	%END REM
+	Function readrow( row As Integer ) As Variant
+		On Error GoTo eh
+		Dim record As Variant
+		Dim v As Variant
+		
+		v = sheet.Range(sheet.Cells(row, 1),sheet.Cells(row, cols)).Value
+		
+		Dim hasdata As Boolean
+		hasData = False
+		Dim i As Integer
+		ReDim record( cols-1 )
+		For i = 0 To cols-1
+			record( i ) = v( 1, i+1 )
+			If cString( record( i )) <> "" Then hasData = True
+		Next
+		
+		If hasData Then
+			readrow = record
+		Else
+			readrow = Null
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function getForm
+		Return a formname from the database
+	%END REM
+	Private Function getForm() As String
+		formname = ws.Prompt(PROMPT_OKCANCELLIST, "Select a form", "Please select a form", "", getForms())
+	End Function
+	
+	%REM
+		Function getViews
+		Description: Comments for Function
+	%END REM
+	Function getViews() As Variant
+		On Error GoTo eh
+		Dim views As New Array( Null )
+		
+		ForAll view In db.Views
+			If IsArray( view.aliases ) Then
+				Call views.add( view.aliases( UBound( view.aliases)))
+			Else
+				Call views.add( view.name )
+			End If
+		End ForAll
+		
+		Call views.unique()
+		Call views.sort()
+		getViews = views.elements
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function getForms
+		Description: Comments for Function
+	%END REM
+	Function getForms() As Variant
+		On Error GoTo eh
+		Dim forms As New Array( Null )
+		
+		ForAll form In db.Forms
+			If IsArray( form.aliases ) Then
+				Call forms.add( form.aliases( UBound( form.aliases)))
+			Else
+				Call forms.add( form.name )
+			End If
+		End ForAll
+		
+		Call forms.unique()
+		Call forms.sort()
+		getForms = forms.elements
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	Sub Delete
+		Call closeFile() 'always close the excel file
+	End Sub
+	
+	
+	%REM
+		Function closeFile
+		Description: Comments for Function
+	%END REM
+	Private Function closeFile()
+		On Error Resume next
+		book.Close False
+		excel.Quit
+		Set excel = Nothing
+		Set book = Nothing
+		Set sheet = Nothing
+	End Function
+	
+	%REM
+		Function getHeader
+		Description: Comments for Function
+	%END REM
+	Private Function getHeader() As Boolean
+		On Error GoTo eh
+		cols = 0
+		Dim value As Variant
+		Dim fieldname As String
+		
+		value = sheet.cells( 1, cols+1 ).value
+		While value <> ""
+			fieldname = cField( CStr( value ))
+
+			ReDim Preserve header( cols )
+			If fieldname = "" Then
+				Print "Invalid fieldname in header at column " & cols & ": " & value
+			Else
+				header( cols ) = fieldname
+				'fields( LCase( fieldname )) = cols
+				
+				ReDim Preserve sample( cols )
+				sample( cols ) = sheet.cells( 2, cols+1 ).value
+			End If
+			
+nextcolumn:
+			cols = cols+1
+			value = sheet.cells( 1, cols+1 ).value
+		Wend
+		
+		getHeader = ( cols > 0 )
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function cField
+		converts a string to a fieldname 
+	%END REM
+	Private Function cField( s As String ) As String
+		On Error GoTo eh
+		s = FullTrim( s )
+		Const legalchars = "abcdefghijklmnopqrstuvwxyz_" 'a fieldname can begin with one of these 
+		Const legalother = "0123456789."
+		Const legal = legalchars+legalother
+		
+		Dim fieldname As String
+		Dim i As Integer
+		Dim char As String
+		
+		For i = 1 To Len( s )
+			char = Mid( s, i, 1 )
+			If InStr( 1, legal, char, 5 ) > 0 Then
+				fieldname = fieldname+char
+			End If
+		Next
+		
+		If fieldname <> "" Then
+			If InStr( 1, legalchars, Left( fieldname, 1 ), 5 ) = 0 Then
+				'fieldname starts with an illegal char
+				fieldname = "_" & fieldname 
+			End If
+		End If
+		
+		cField = Left( fieldname, 32 )
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function isOpen
+		Returns true is an Excel is open
+	%END REM
+	Private Function isOpen()
+		On Error GoTo eh
+		If IsObject( sheet ) Then
+			isOpen = ( Not sheet Is Nothing )
+		Else
+			isOpen = false
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function openFile
+		Open excel with the selected file
+		Read the header
+	%END REM
+	Private Function openFile( filename As String )
+		On Error GoTo eh
+		If IsObject( excel ) Then Call closeFile()
+		
+		Set excel = CreateObject("Excel.Application")
+		excel.Visible = False
+		Set book = excel.Workbooks.open( filename )
+		Set sheet = excel.Worksheets( 1 )
+		
+done:
+		Exit Function
+eh: 
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+		
+	%REM
+		Function openFile
+		- Let the user select an Excel file
+	
+	Private Function selectFile() As Boolean
+		Dim ws As New NotesUIWorkspace
+		Dim v As Variant
+		'v = Evaluate(|@prompt([LocalBrowse]; "Select a file"; "Please select an Excel file to import")|)
+		v = OpenFileDlg
+		me.excelFilename = filename
+		selectFile = v
+	End Function
+	%ENDREM
+End Class
+'++LotusScript Development Environment:2:2:Initialize:1:10
+Sub Initialize
+	
+End Sub
+
+
+
+
+'++LotusScript Development Environment:2:1:importDialog:5:8
+%REM
+	Function importDialog
+	Description: Comments for Function
+%END REM
+Function importDialog()
+	Dim ws As New NotesUIWorkspace
+	Dim session As New NotesSession
+	Dim db As NotesDatabase
+	Dim dlg As NotesDocument
+	
+	Set db = session.Currentdatabase
+	Set dlg = db.Createdocument()
+	
+	Call ws.Dialogbox("(dlgImport)", true, true, true, false, false, false, "Import", dlg, true, True )
+End Function
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,957 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Declare
+Use "cls.system"
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Public Class StringUtils As AbstractObject
+Declare Public Class Utils As AbstractObject
+Declare Public Class Progress As AbstractObject 
+Declare Public Class Stopwatch As AbstractObject
+Declare  Static Public Function SystemWatch As Stopwatch
+Declare Public Function cArray( source As Variant ) As Array
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+
+
+%REM
+**************************************************************************************************************************'
+COPYRIGHT 2003-2013 by MAJKILDE Aps
+**************************************************************************************************************************'
+This library is programmed and owned by MAJKILDE Aps
+Under the copyright laws, neither the documentation nor the software may be copied, photocopied, 
+reproduced, translated, resold, or reduced to any electronic medium or machine-readable form, 
+in whole or in part, without the prior written consent of MAJKILDE Aps, except in the manner described 
+in the documentation or the applicable licensing agreement governing the use of the software.
+**************************************************************************************************************************'
+%ENDREM
+
+
+%REM @Revisions
+	Rev 7.1 majkilde 15.05.2013
+	- Stopwatch.getCount added
+	Rev 7.0.7 majkilde 20.02.2013
+	- Utils.IsEqual now works if value1 is an array but value2 isn't
+	Rev 7.0.6 majkilde 8.05.2012
+	- Small fix to the progress.print function (don't print on server)
+	Rev 7.0.5 majkilde 31.01.2012
+	- Global SystemWatch added
+	Rev 7.0.4 majkilde 30.01.2012
+	- New method: Utils.resolveMembers
+	Rev 7.0.3 majkilde 25.01.2012
+	- New method: Stopwatch.getClockNames()
+	Rev 7.0.2 majkilde 24.01.2012
+	- Fixed some errors with the time calc in Progress class
+	Rev 7.0.1 majkilde 28.12.2011
+	- Progress updated to support max=0
+	Rev 7.0 majkilde 13.12.2011
+	- Added class Progress
+	- Added class Stopwatch
+	- Added class StringUtils
+	- Removed class Timers
+	- Removed class ProcessBar
+	- Removed class Strings
+	- Remvoed class ArrayEx
+%END REM
+
+Private watch As Stopwatch
+
+'#STRINGS ###################################################################################
+
+Private Const COMPARE_METHOD_DEFAULT = 0
+
+'compMethod:
+'	0	case sensitive, pitch sensitive
+'	1	case insensitive, pitch sensitive
+'	4	case sensitive, pitch insensitive
+'	5	case insensitive, pitch insensitive
+
+
+%REM
+All numbers
+%END REM
+Public Const CHARS_09 = "0123456789"
+%REM
+All lowercase characters
+%END REM
+Public Const CHARS_AZ_LOWER = "abcdefghijklmnopqrstuvwxyz"
+%REM
+All uppercase characters
+%END REM
+Public Const CHARS_AZ_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+%REM
+All characters from A to Z
+%END REM
+Public Const CHARS_AZ = CHARS_AZ_LOWER + CHARS_AZ_UPPER'Strings'Utils
+
+%REM
+The String class represents character strings.
+%END REM
+
+Public Class StringUtils As AbstractObject
+	
+%REM
+Encodes a string 2 XML (convert illegal chars, eg. convert < to &lt;)
+%END REM
+	Public Function xmlEncode( inputStr As String ) As String 
+		On Error GoTo eh
+		
+		Dim tmpStr As String 
+		Dim a As Long 
+		For a = 1 To Len( inputStr ) 
+			Select Case Mid( inputStr , a , 1 ) 
+			Case |&| : tmpStr = tmpStr & |&amp;| 
+			Case |<| : tmpStr = tmpStr & |&lt;| 
+			Case |>| : tmpStr = tmpStr & |&gt;| 
+			Case |"| : tmpStr = tmpStr & |&quot;| 
+			Case |'| : tmpStr = tmpStr & |&apos;| 
+			Case Else : tmpStr = tmpStr & Mid$( inputStr , a , 1 ) 
+			End Select 
+		Next 
+		xmlEncode = tmpStr 
+		
+DONE:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+		
+	End Function
+	
+%REM
+Decodes xml to a string (e.g. convert from &amp; to & )
+%END REM
+	Public Function xmlDecode( inputStr As String ) As String 
+				
+		On Error GoTo ERRORHANDLER
+		inputStr = Replace( inputStr, |&amp;|, |&|, 5 )
+		inputStr = Replace( inputStr, |&lt;|, |<|, 5 )
+		inputStr = Replace( inputStr, |&gt;|, |>|, 5 )
+		inputStr = Replace( inputStr, |&quot;|, |"|, 5 )
+		inputStr = Replace( inputStr, |&apos;|, |'|, 5 )
+		xmlDecode = inputStr
+		
+DONE:
+		Exit Function
+ERRORHANDLER:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+%REM
+URL decoding according to RFC1738
+%END REM
+	Public Function unescape( value As String ) As String
+		On Error GoTo ERRORHANDLER
+		Dim tmpStr As String
+		Dim a As Long
+		Dim charNo As Long
+		
+		For a = 1 To Len( value )
+			If Mid( value , a , 1 ) = "%" Then
+				charNo = CInt( "&H" & Mid( value , a+1 , 2 ) )
+				tmpStr = tmpStr & Chr( charNo )
+				a = a + 2
+			Else
+				tmpStr = tmpStr & Mid( value , a , 1 )
+			End If
+		Next
+		
+		unescape = tmpStr
+		
+DONE:
+		Exit Function
+ERRORHANDLER:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+%REM
+ URL encoding according to RFC1738
+%END REM
+	Public Function escape( value As String ) As String
+		On Error GoTo ERRORHANDLER
+		Dim tmpStr As String
+		Dim a As Long
+		For a = 1 To Len( value )
+			Select Case Mid( value , a , 1 )
+			Case "a" To "z", "A" To "Z", "0" To "9" : tmpStr = tmpStr & Mid$( value , a , 1 )
+			Case "$" , "-" , "_" , "." , "+", "!" , "*" , "'" , "(" , ")" , ",", "/", "?", "&", ":" : tmpStr = tmpStr & Mid$( value , a , 1 )
+			Case Else : tmpStr = tmpStr & "%" & Hex( Asc( Mid$( value , a , 1 ) ) )
+			End Select
+		Next
+		escape = tmpStr
+	
+DONE:
+		Exit Function
+ERRORHANDLER:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+
+	
+%REM
+Converts all of the characters in this String to lower case - except the first character in each word, these are converted to uppercase
+%END REM
+	Public Function toPropercase( value As String ) As String
+		toPropercase = StrConv( value, 3 ) 'SC_Propercase=3
+	End Function 'toPropercase
+
+	
+%REM
+Returns true if the string object only contains valid characters, specified by the validChars parameter
+
+Parameters:
+validChars - String containing all valid characters
+
+Example
+
+if StringUtils.isValidChar( s, CHARS_AZ ) then
+	print "OK"
+else
+	print "Error - string has illegal charecters"
+end if
+%END REM
+	Public Function isValidChars( value As String, validChars As String ) As Long
+		Dim idx As Long
+		Dim char As String
+		
+		isValidChars = True
+		For idx = 1 To Len( value )
+			char = Mid( value, idx, 1 )
+			If InStr( 1, validChars, char, 5 ) = 0 Then
+				isValidChars = False
+				Exit Function
+			End If
+		Next
+	End Function 'isValidChars
+	
+End Class 
+
+
+
+'# UTILS ###################################################################################
+Public Class Utils As AbstractObject
+'####################################################################################
+	Private nab As NotesDatabase 'used by getServerDocument
+	
+%REM
+Same as @isMember( "[role]", @userroles )
+
+Parameters
+role - the name of the role to check for
+
+Returns
+true: the user has the role
+false: the user doesn't have the role
+
+Example
+dim util as new Util()
+if util.hasRole( "[Admin]" ) then
+    print "You have the Admin role"
+end if
+%END REM
+	Public Function hasRole( role As String ) As Integer
+	'------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+		Dim v As Variant
+		v = Evaluate( |@isMember( "| & role & |"; @userroles) | )
+		hasRole =  ( v( 0 ) = 1 )
+	End Function 'hasRole
+	
+	
+%REM 
+Return true is value is empty or field (NotesItem/NotesRichTextItem)
+%END REM 
+	Public Function IsEmpty( value As Variant ) As Boolean 
+        '--------------------------------------------------------------------------------------------------------------------------------------------------------------------       
+		On Error GoTo ERRORHANDLER
+		Select Case TypeName( value )
+		Case "NOTESITEM"
+			If value Is Nothing Then Me.isEmpty = True : Exit Function
+			If value.valuelength = 0 Then Me.isEmpty = True : Exit Function
+			Me.isEmpty = False
+			Exit Function
+			
+		Case "NOTESRICHTEXTITEM"
+			If value Is Nothing Then Me.isEmpty = True : Exit Function
+			
+			Me.isEmpty = False
+			
+			'search the richtext item for content
+			Dim rtNav As NotesRichTextNavigator
+			Set rtNav = value.CreateNavigator
+			
+			If ( rtNav.FindFirstElement ( RTELEM_TYPE_TABLE ) ) Then Exit Function
+			If ( rtNav.FindFirstElement ( RTELEM_TYPE_TEXTRUN ) ) Then Exit Function
+			If ( rtNav.FindFirstElement ( RTELEM_TYPE_TEXTPARAGRAPH ) ) Then Exit Function
+			If ( rtNav.FindFirstElement ( RTELEM_TYPE_DOCLINK ) ) Then Exit Function
+			If ( rtNav.FindFirstElement ( RTELEM_TYPE_SECTION ) ) Then Exit Function
+			If ( rtNav.FindFirstElement ( RTELEM_TYPE_TABLECELL ) ) Then Exit Function
+			If ( rtNav.FindFirstElement ( RTELEM_TYPE_FILEATTACHMENT ) ) Then Exit Function
+			If ( rtNav.FindFirstElement ( RTELEM_TYPE_OLE ) ) Then Exit Function
+			
+			Me.isEmpty = True
+			
+		Case Else
+			
+			
+			If IsScalar( value ) Then 
+				Select Case TypeName( value ) 
+				Case "VARIANT" 
+					If IsEmpty( value ) Then 
+						Me.isEmpty = True 
+						Exit Function 
+					End If 
+					
+					If IsNull( value ) Then 
+						Me.isEmpty = True 
+						Exit Function 
+					End If 
+					
+					If value = "" Then 
+						Me.isEmpty = True 
+					Else 
+						Me.isEmpty = False 
+					End If 
+					Exit Function 
+					
+				Case "BOOLEAN" 
+					Me.isEmpty = Not value 
+					Exit Function 
+					
+				Case Else 
+					If CStr( value ) = "" Then 
+						Me.isEmpty = True 
+					Else 
+						Me.isEmpty = False 
+					End If 
+					Exit Function 
+					
+				End Select 
+				
+			Else 'object, list or array 
+				If IsArray( value ) Then 
+					ForAll entry In value
+						If Not Me.isEmpty( entry ) Then Me.isEmpty = False : Exit Function
+					End ForAll
+					Me.isEmpty = True
+					Exit Function 
+				End If 
+				
+				If IsObject( value ) Then 
+					If value Is Nothing Then 
+						Me.isEmpty = True 
+					Else 
+						Me.isEmpty = False 
+					End If 
+					Exit Function 
+				End If 
+				
+				If IsList( value ) Then 
+					ForAll e In value 
+						Me.isEmpty = False 
+						Exit Function 
+					End ForAll 
+					
+					Me.isEmpty = True 
+					Exit Function 
+				End If 
+			End If 
+		End Select
+		
+DONE:
+		Exit Function
+ERRORHANDLER:
+		Call Me.logAction( LOG_FATAL, parseParams( "Error in %4 : %1 %2 at line %3", Err, Error, Erl, GetThreadInfo( 1 )), Nothing )
+		Resume DONE
+	End Function 'isEmpty 
+	
+	
+%REM
+Compares to values. Returns true if they are exactly equal. 
+Can compare both single values and arrays
+%END REM
+	Public Function isEqual( value1 As Variant, value2 As Variant ) As Integer
+	'------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+		On Error GoTo ERRORHANDLER
+		Dim i As Integer
+		
+		isEqual = False
+		
+ 	    'Check the datatype
+		Select Case TypeName( value1 )
+		Case "NOTESITEM", "NOTESRICHTEXTITEM"
+			If TypeName( value1 ) <> TypeName( value2 ) Then Exit Function
+			If value1.type <> value2.type Then Exit Function
+			If value1.isReaders <> value2.isReaders Then Exit Function
+			If value1.isAuthors <> value2.isAuthors Then Exit Function
+			If value1.isNames <> value2.isNames Then Exit Function
+			
+			If Me.Isempty( value1 ) And Me.Isempty( value2 ) Then isEqual = True : Exit Function
+			
+			If value1.valuelenght <> value2.valuelenght Then Exit Function
+			If value1.text <> value2.text Then Exit Function
+			
+		Case Else
+			
+				If IsArray( value1 ) Then 'Array
+					If IsArray( value2 ) Then
+						If UBound( value1 ) <> UBound( value2 ) Then Exit Function
+						If LBound( value1 ) <> LBound( value2 ) Then Exit Function
+						For i = LBound( value1 ) To UBound( value1 ) 
+							If DataType( value1( i )) <> DataType( value2( i )) Then Exit Function
+							'If Len( value1( i )) <> Len( value2( i )) Then Exit Function
+							If value1( i ) <> value2( i ) Then Exit Function
+						Next
+					Else
+						'value1 is an array, but value2 is not
+						Exit Function
+					End If
+				Else 'Scalar
+				If DataType( value1 ) <> DataType( value2 ) Then Exit Function
+				If value1 <> value2 Then Exit Function
+			End If
+		End Select
+		
+		isEqual = True
+DONE:
+		Exit Function
+ERRORHANDLER:
+		Call Me.logAction( LOG_FATAL, parseParams( "Error in %4 : %1 %2 at line %3", Err, Error, Erl, GetThreadInfo( 1 )), Nothing )
+		Resume DONE
+	End Function 'isEqual
+	
+%REM
+Returns the server document for the specified server (use blank for current)
+%END REM
+	Private Function getServerDocument( servername As String ) As NotesDocument
+		On Error GoTo ERRORHANDLER
+		Dim session As New NotesSession
+		Dim view As NotesView
+		Dim server As NotesName 
+		If servername = "" Then
+			Set server = New NotesName( session.CurrentDatabase.Server )
+		Else
+			Set server = New NotesName( servername )
+		End If
+		
+		If server.common = "" Then
+			Set getServerDocument = Nothing
+		Else
+			Set nab = New NotesDatabase( server.Abbreviated, "names.nsf" )
+			If nab Is Nothing Then Error 9000, parseParams( "Can't open names.nsf on %1", server.Abbreviated, "", "", "" )
+			Set view = nab.getView( "($Servers)" )
+			If view Is Nothing Then Error 9000, parseParams( "Can't open view ($Servers) in names.nsf on %1", server.Abbreviated, "", "", "" )
+			
+			Set getServerDocument = view.getDocumentByKey( server.canonical, True )
+		End If
+DONE:
+		Exit Function
+ERRORHANDLER:
+		Call Me.logAction( LOG_FATAL, parseParams( "Error in %4 : %1 %2 at line %3", Err, Error, Erl, GetThreadInfo( 1 )), Nothing )
+		Resume DONE
+	End Function 'getServerDocument
+	
+%REM
+Returns the host name for the current server - or the hostname found on the 'Setup' profile document if exits (in field named 'HTTP_HostName')	
+%END REM
+	Public Function getHTTPHostname() As String
+		On Error GoTo ERRORHANDLER
+		Dim session As New NotesSession
+		Dim db As NotesDatabase
+		Dim serverDoc As NotesDocument
+		Dim profile As NotesDocument
+		Dim hostname As String
+		
+		Set db = session.CurrentDatabase
+		
+		Dim server As New NotesName( db.Server )
+		Set profile = db.GetProfileDocument( "Setup" )
+		
+		hostname = profile.GetItemValue( "HTTP_HostName" )( 0 )
+		
+		If hostname = "" Then
+			If db.Server = "" Then
+				hostname = "localhost"
+			Else
+				Set serverDoc = getServerDocument( server.Abbreviated )
+				If Not serverDoc Is Nothing Then
+					hostname = serverDoc.HTTP_HostName( 0 )
+					If Len( hostname ) = 0 Then
+						hostname = server.common
+					End If
+				End If
+			End If
+		End If
+		getHTTPHostname = hostname
+DONE:
+		Exit Function
+ERRORHANDLER:
+		Call Me.logAction( LOG_FATAL, parseParams( "Error in %4 : %1 %2 at line %3", Err, Error, Erl, GetThreadInfo( 1 )), Nothing )
+		Resume DONE
+	End Function 'getHTTPHostname
+	
+	
+	Public Function getNotesUrl( linkto As Variant ) As String
+		Dim db As NotesDatabase
+		Select Case TypeName( linkto )
+		Case "NOTESDATABASE"
+			Set db = linkto
+		Case Else
+			Set db = linkto.parentDatabase
+		End Select
+		Dim n As New NotesName( db.Server )
+		getNotesUrl = "notes://" &  n.Common & getUrlTo( linkto )
+	End Function
+	
+	Public Function getUrlTo( LinkTo As Variant ) As String
+		On Error GoTo ERRORHANDLER
+		Dim session As New NotesSession
+		Dim tmpUrl As String
+		Dim dbRootDir As String
+		
+		Dim stringUtils As New StringUtils()
+		
+		Select Case TypeName( linkTo )
+		Case "NOTESDATABASE" :
+			tmpUrl = linkTo.FilePath
+			' Handle files opened thru the file system
+			If InStr( tmpUrl,":" ) > 0 Then
+				dbRootDir = session.GetEnvironmentString("Directory",True)
+				tmpUrl = Mid( tmpUrl, Len(dbRootDir) + 2 )
+			End If
+			tmpUrl = "/" & Replace( Replace(  tmpUrl, "\", "/" ), " ", "+" )
+		Case "NOTESVIEW" :
+			If IsEmpty( linkTo.Aliases ) Then
+				tmpUrl = getUrlTo( linkTo.parent ) & "/" & stringUtils.escape( linkTo.name )
+				Else
+				tmpUrl = getUrlTo( linkTo.parent ) & "/" & stringUtils.escape( linkTo.Aliases( UBound( linkTo.Aliases )))
+			End If
+		Case "NOTESDOCUMENT" :
+			If linkTo.parentView Is Nothing Then
+				tmpUrl = getUrlTo( linkTo.parentDatabase ) & "/0/" & linkTo.UniversalId
+			Else			
+				tmpUrl = getUrlTo( linkTo.parentView ) & "/" & linkTo.UniversalId
+			End If
+		Case "NOTESFORM" :
+			If IsEmpty( linkTo.Aliases ) Then
+				tmpUrl = getUrlTo( linkTo.parent ) & "/" & stringUtils.escape( linkTo.name )
+			Else
+				tmpUrl = getUrlTo( linkTo.parent ) & "/" & stringUtils.escape( linkTo.Aliases( UBound( linkTo.Aliases )))
+			End If
+		Case "NOTESAGENT" :
+				tmpUrl = getUrlTo( linkTo.parent ) & "/" & stringUtils.escape( linkTo.name )
+		End Select
+		
+		getUrlTo = LCase$( tmpUrl )
+DONE:
+		Exit Function
+ERRORHANDLER:
+		Call Me.logAction( LOG_FATAL, parseParams( "Error in %4 : %1 %2 at line %3", Err, Error, Erl, GetThreadInfo( 1 )), Nothing )
+		Resume DONE
+	End Function 'getUrlTo
+	
+	%REM
+		Resolves a mixed list of groups and usernames - Explodes the groups and returns a list with all usernames
+	%END REM
+	Public Function resolveMembers( GroupOrNameList As Variant ) As Variant
+		On Error GoTo eh
+		Dim members As Variant
+		Dim group As NotesDocument
+		Dim person As NotesDocument
+		Dim v As Variant
+
+		'find a server (use the homeserver if script is running on a local database)
+		Dim server As Variant
+		server = Evaluate(|@if( @subset( @dbname;1 ) = ""; @LocationGetInfo([HomeServer]); @subset( @dbname;1 ))|)
+
+		Dim namelist As Variant
+		namelist = cList( GroupOrNameList ) 'convert to array
+
+		ForAll member In namelist
+			'find the group in names.nsf
+			Set group = CacheManager.getDocument( server( 0 ) & "!!names.nsf", "($VIMGroups)", CStr( member ))
+			If Not group Is Nothing Then
+				v = resolveMembers( group.members )
+			Else
+				Set person = CacheManager.getDocument( server( 0 ) & "!!names.nsf", "($Users)", CStr( member ))
+				If person Is Nothing Then
+					v = cList( member ) 'if not found - then just add
+				Else
+					v = cList( person.fullname( 0 ))
+				End If
+			End If
+
+			If IsEmpty( members ) Then
+				members = v
+			Else
+				members = ArrayAppend( members, v)
+			End If
+		End ForAll
+
+		'return
+		resolveMembers = ArrayUnique( members )
+
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+End Class 
+%REM 
+        Class Progress 
+        Description: Comments for Class 
+%END REM 
+Public Class Progress As AbstractObject 
+	Private max As Long 
+	Private lastPercentage As Integer 
+	Private lastSecond As Integer
+	Private current As Long 
+	Private starttime As Variant 
+	Private startticks As Long 
+	
+	%REM 
+                max: equal to 100%. Used to calculate the percentage and time left
+        		use max=0 to use a simple counter
+	%END REM 
+	Sub New( max As Long ) 
+		me.max = max 
+		me.lastPercentage = -1 
+		me.current = 0 
+		
+		me.starttime = Now 
+		me.startticks = GetThreadInfo( 6 ) 
+	End Sub 
+	
+	%REM 
+                msg: string to print, but only if percentage is modified since last print 
+                Include parameters in the string: 
+                max > 0
+                        %1 - the percentage are inserted at this position 
+                        %2 - elapsed time 
+                        %3 - estimated time left 
+                max=0
+                		%1 - the current index number
+
+                sample 1:
+                	dim p as new Progress( 1000 )
+                	for i = 1 to 1000
+                		call p.print( "%1 completed. Estimated timeleft: %3", progress.increment()) 
+                	next
+                                                                                                
+                sample 2: 
+                	dim p as new Progress( 0 )
+                	do 
+                		call p.print( "Processed count: %1", progress.increment()) 
+                	loop
+                
+	%END REM 
+	Public Function Print( msg As String, index As Long )
+		If session.Isonserver Then Exit Function 'don't print when running on a server - this is a UI only function ...
+		
+		If max > 0 Then 'max > 0
+			Dim percentage As Integer 
+			percentage =  (index*100) \ max 
+			
+			Dim sec As Integer
+			sec = Second( Now ) \ 2
+			
+			If percentage <> lastPercentage Or sec <> lastSecond Then 
+				Dim elapsedtimes As Long 
+				elapsedtimes = ( GetThreadInfo( 6 ) - startticks ) / GetThreadInfo( 7 ) 'millesecond elapsed since start 
+				
+				Dim elapsedtime As String 
+				Select Case elapsedtimes 
+				Case Is < 60: elapsedtime = elapsedtimes & " seconds" 
+				Case Else: elapsedtime = elapsedtimes\60 & " minutes" 
+				End Select 
+				
+				Dim timelefts As Double 
+				timelefts = ((max-index) * elapsedtimes)/index
+				
+				Dim timeleft As String 
+				Select Case timelefts 
+				Case Is < 60: timeleft = CInt( timelefts ) & " seconds" 
+				Case Else: timeleft = timelefts\60 & " minutes" 
+			End Select 
+				
+				Print parseParams( msg, percentage & "%", elapsedtime, timeleft, ""  ) 
+				lastPercentage = percentage 
+				lastSecond = sec
+			End If 
+		Else 'max = 0
+			Select Case index
+			Case Is < 100:
+				Print parseParam( msg, index )
+			Case Is < 1000:
+				If index Mod 10 = 0 Then
+					Print parseParam( msg, index )
+				End If
+			Case Else:
+				If index Mod 100 = 0 Then
+					Print parseParam( msg, index )
+				End If
+		End Select
+		End If
+	End Function 
+	
+	%REM 
+                increments the builtin counter and returns the result 
+                sample: 
+                        call progress.print( "Updated %1 of the documents. Estimated time left: %3", progress.increment()) 
+	%END REM 
+	Public Function increment() As Long 
+		current = current+1 
+		increment = current 
+	End Function 
+
+End Class
+%REM
+	Can be used to count used time in your code
+	Sample:
+	
+	dim stopwatch as new Stopwatch
+	
+	for i = 1 to 100
+		call stopwatch.start( "watchname" )
+		
+		'some code here you want to messure
+		'...
+		call stopwatch.stop( "watchname" )	
+	next
+	
+	print "Time used: " & stopwatch.readms( "watchname" ) & " ms"
+	
+%END REM
+Public Class Stopwatch As AbstractObject
+	Private ticksPerMilliSecond As Long
+	
+	Private count List As Long 'counts how many times each clock has been started
+	Private times List As Long 'holds the accumulated times (sum of all previoues start/stop intervals)
+	Private clocks List As Long 'holds the start time for all running clocks
+	
+	Sub New()
+		ticksPerMilliSecond = GetThreadInfo( 7 ) \ 1000 'LSI_THREAD_TICKS_PER_SEC
+	End Sub
+	
+%REM
+	Starts the clock
+%END REM
+	Public Function start( clockname As String )
+		On Error GoTo eh
+		'start the clock = save the current time
+		clockname = LCase( clockname )
+		
+		clocks( clockname ) = GetThreadInfo( 6 ) 'LSI_THREAD_TICKS=6
+		
+		
+		If IsElement( count( clockname )) Then
+			count( clockname ) = count( clockname )+1
+		Else
+			count( clockname ) = 1
+		End If
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function getClockNames
+		Description: Comments for Function
+	%END REM
+	Function getClockNames() As Variant
+		On Error GoTo eh
+		Dim a As New Array( Null )
+		ForAll entry In count
+			Call a.add( ListTag( entry ))
+		End ForAll
+		getClockNames = a.elements
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+%REM
+	stop the clock (you can always start it again)
+%END REM
+	Public Function Stop( clockname As String ) As Long
+	On Error GoTo eh
+		'stop the clock = calculate the elapsed time in ticks and store result in the times list
+		clockname = LCase( clockname )
+		
+		Dim ticks As Long
+		
+		ticks = me.read( clockname ) 'read the time and store result
+		times( clockname ) = ticks
+		
+		If IsElement( clocks( clockname )) Then
+			Erase clocks( clockname ) 'clock stopped'
+		End If
+		
+		me.stop = ticks
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		reset all clocks
+	%END REM
+	Public Function clearAll()
+		Erase clocks
+		Erase times
+	End Function
+	
+	%REM
+		'Clears the timer
+	%ENDREM
+	Public Function Reset( clockname As String ) 
+	On Error GoTo eh
+		clockname = LCase( clockname )
+		If IsElement( times( clockname )) Then Erase times( clockname )
+		If IsElement( clocks( clockname )) Then Erase clocks( clockname )
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+
+%REM
+	Returns the elapsed time in ticks
+%END REM
+	Public Function Read( clockname As String ) As Long
+	On Error GoTo eh
+		clockname = LCase( clockname )
+		
+		Dim ticks As Long
+		
+		If IsElement( clocks( clockname )) Then 'currently running - get the current time
+			ticks = GetThreadInfo( 6 ) - clocks( clockname )
+		Else
+			ticks = 0 
+		End If
+
+		If IsElement( times( clockname )) Then 
+			ticks = times( clockname )+ ticks
+		End If
+		
+		me.read = ticks
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function getCount
+		Description: Comments for Function
+	%END REM
+	Public Function getCount( clockname As String ) As Long
+		On Error GoTo eh
+		clockname = LCase( clockname )
+		
+		If IsElement( count( clockname )) Then 
+			getCount = count( clockname )
+		Else
+			getCount = 0 
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	
+	%REM
+		Returns the elapsed time as a string with an unit, e.g. '6 seconds'
+	%END REM
+	Public Function getTimeStr( clockname As String ) As String
+		On Error GoTo eh
+		Dim t As Long
+		t = readms( clockname )
+		Dim ms As Long
+		Dim s As Long
+		Dim m As Long
+		Dim h As Long
+		
+		If t < 1000 Then
+			'milliseconds
+			getTimeStr = t & " msec"
+		Else
+			s = t\1000
+			ms = t Mod 1000
+			If s < 60 Then
+				'seconds
+				getTimeStr = parseParams( "%1.%2 seconds", s, Right( "000" & ms, 3 ), "", "" )
+			Else
+				m = s\60
+				s = s Mod 60
+				If m < 60 Then
+					'minutes
+					getTimeStr = parseParams( "%1:%2 minutes", m, Right( "00" & s, 2 ), "", "")
+				Else
+					h = m\60
+					m = m Mod 60
+					'hoours
+					getTimeStr = parseParams( "%1:%2:%3 hours", h, Right( "00" & m, 2 ), Right( "00" & s, 2 ), "" )
+				End If
+			End If			
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Returns the elapsed time in milliseconds
+	%END REM
+	Public Function readms( clockname As String ) As Long
+		On Error GoTo eh
+		readms = me.read( clockname ) \ ticksPerMilliSecond
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+End Class
+'++LotusScript Development Environment:2:1:SystemWatch:7:8
+
+
+%REM
+	Function getWatch
+	Description: Comments for Function
+%END REM
+ Static Public Function SystemWatch As Stopwatch
+ 	If watch Is Nothing Then 
+ 		Set watch = New Stopwatch
+ 	End If 
+	 Set SystemWatch = watch
+ End Function
+
+'++LotusScript Development Environment:2:1:cArray:1:8
+Public Function cArray( source As Variant ) As Array
+	'---------------------------------------------------------------------------------------------------------------------------------------------------
+	Set cArray = New Array( source )
+End Function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
