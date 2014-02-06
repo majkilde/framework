@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?><note class="filter" maintenanceversion="1.0" replicaid="C12579E700306BE2" version="9.0" xmlns="http://www.lotus.com/dxl">
+<noteinfo noteid="442" sequence="101" unid="CC06F7AEE80E79DCC125775F00619D03">
+<created><datetime dst="true">20100713T194611,87+02</datetime></created>
+<modified><datetime>20130121T103818,50+01</datetime></modified>
+<revised><datetime>20130121T103751,74+01</datetime></revised>
+<lastaccessed><datetime>20130121T103818,50+01</datetime></lastaccessed>
+<addedtofile><datetime dst="true">20120421T104858,94+02</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Jakob Majkilde/O=MAJKILDE</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/O=MAJKILDE</name></wassignedby>
+<item name="$Flags"><text>s34Q</text></item>
+<item name="$PublicAccess" sign="true"><text>1</text></item>
+<item name="$TITLE" sign="true"><text>SigmaFile</text></item>
+<item name="$Comment" sign="true"><text>Rev 6.6: Used from macro's on the template document</text></item>
+<item name="$DesignerVersion" sign="true"><text>8.5.3</text></item>
+
+</note>

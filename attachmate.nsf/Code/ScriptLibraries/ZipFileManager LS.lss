@@ -1,0 +1,158 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Public
+Option Explicit
+
+Uselsx "*javacon"
+Use "zfmWrapper4LS"
+
+
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class ZipFileManager
+Declare Sub Initialize
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+%REM
+This is a LotusScript wrapper around the Java ZipFileManager library.
+Please see that library for a description of what all the functions do and
+how the library works.
+%END REM
+
+Class ZipFileManager
+	Private jSession As JavaSession
+	Private jError As JavaError
+	Private zfmClass As JavaClass
+	Private zfm As JavaObject
+	Private ignoreSaveErrors As Boolean
+	
+	Public Sub New (fileName As String)
+		Set jSession = New JavaSession
+		Set zfmClass = jSession.GetClass("zfmWrapper4LS")
+		Set zfm = zfmClass.CreateObject("(Ljava/lang/String;)V", fileName)
+	End Sub
+	
+	
+	Public Sub Delete ()
+		'** make sure we close everything properly when we're done
+		If Not (zfm Is Nothing) Then
+			Call zfm.close(False)
+		End If
+	End Sub
+	
+	
+	Public Sub setRelativePath (pathName As String)
+		Call zfm.setRelativePath(pathName)
+	End Sub
+	
+	
+	Public Function getEntryNames () As Variant
+		getEntryNames = zfm.getEntryNames()
+	End Function
+	
+	
+	Public Function getNewEntryNames () As Variant
+		getNewEntryNames = zfm.getNewEntryNames()
+	End Function
+	
+	
+	Public Function getNewFilesAdded () As Variant
+		getNewFilesAdded = zfm.getNewFilesAdded()
+	End Function
+	
+	
+	Public Sub saveEntryAsFile (entryName As String, fileName As String)
+		Call zfm.saveEntryAsFile(entryName, fileName)
+	End Sub
+	
+	
+	Public Sub removeEntry (entryName As String)
+		Call zfm.removeEntry(entryName)
+	End Sub
+	
+	
+	Public Sub addEntry (fileName As String)
+		Call zfm.addEntry(fileName)
+	End Sub
+	
+	
+	Public Sub addDirectoryEntry (dirName As String, howDeep As Integer, pattern As String)
+		Call zfm.addDirectoryEntry(dirName, howDeep, pattern)
+	End Sub
+	
+	
+	Public Sub updateEntry (fileName As String)
+		Call zfm.updateEntry(fileName)
+	End Sub
+	
+	
+	Public Sub updateDirectoryEntry (dirName As String, howDeep As Integer, pattern As String)
+		Call zfm.updateDirectoryEntry(dirName, howDeep, pattern)
+	End Sub
+	
+	
+	Public Function getCurrentZipFileName (fileName As String) As String
+		getCurrentZipFileName = zfm.getCurrentZipFileName()
+	End Function
+	
+	
+	Public Function getNewZipFileName (fileName As String) As String
+		getNewZipFileName = zfm.getNewZipFileName()
+	End Function
+	
+	
+	Public Sub setNewZipFileName (fileName As String)
+		Call zfm.setNewZipFileName(fileName)
+	End Sub
+	
+	
+	Public Sub setIgnoreSaveErrors (shouldIgnore As Boolean)
+		ignoreSaveErrors = shouldIgnore
+	End Sub
+	
+	
+	Public Function processChanges () As String
+		processChanges = zfm.processChanges(ignoreSaveErrors)
+	End Function
+	
+	
+	Public Function areChangesPending () As Boolean
+		areChangesPending = zfm.areChangesPending()
+	End Function
+	
+	
+	Public Sub close ()
+		Call zfm.processChanges(ignoreSaveErrors)
+		Call zfm.close(False)
+	End Sub
+	
+	
+	Public Function getDebugMessages () As Variant
+		Dim msg As String
+		msg = zfm.getDebugMessages()
+		getDebugMessages = Split(msg, Chr(10))
+	End Function
+	
+	
+	Public Sub printDebugMessages ()
+		Dim msgArray As Variant
+		msgArray = getDebugMessages
+		Forall msg In msgArray
+			Print Trim(msg)
+		End Forall
+	End Sub
+	
+	
+	Public Function getLastError () As Variant
+		'** get any Java errors that occurred, and clear the Java error stack
+		Set jError = jSession.getLastJavaError()
+		getLastError = Fulltrim(Split(jError.errorMsg & Chr(10) & jError.stackTrace, Chr(10)))
+		jSession.ClearJavaError
+	End Function
+	
+End Class
+'++LotusScript Development Environment:2:2:Initialize:1:10
+Sub Initialize
+	
+End Sub
+
+

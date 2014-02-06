@@ -1,0 +1,1196 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+%REM 
+       Agent XML 
+       Created Mar 22, 2011-2012 by Jakob Majkilde 
+       Description: Comments for Agent 
+%END REM 
+Option Public 
+Option Declare
+
+Use "GetHTML"
+UseLSX "*javacon"  
+
+Use "cls.system"
+
+%REM @revisions
+	Rev 1.3.1 majkilde 23.10.2012
+	- fixed a problem with encoding (<, &)
+	Rev 1.3 majkilde 4.3.2012
+	- Moved to design database and renamed to cls.xml
+	- element.savefile method added
+	Rev 1.2 majkilde 22.12.2011
+	- Added a getAttrrbute method
+	Rev 1.1 majkilde 8.8.2011
+	- Fix some small issues/bugs 
+	
+%END REM
+
+
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class Element 
+Declare Class XML As Element
+Declare Class xPath As AbstractObject
+Declare Class GetHTML As AbstractObject
+Declare Sub Initialize
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+
+%REM 
+       Function element 
+       Description: Comments for Function 
+%END REM 
+Class Element 
+	Private session As NotesSession 
+	
+	Private pSource As String 
+	
+	Private elementName As String 
+	Private value As String 
+	Private attributes List As String 
+	Private comment As String 
+	Private instructions List As String 
+	Private reference As String 
+	Private documenttype As String 
+	
+	Private elements() As element 
+	Private count As Integer 
+	
+	public parent As element
+	
+	Private id As string
+	
+	%REM 
+               Sub New 
+               Description: Comments for Sub 
+	%END REM 
+	Sub New() 
+		Set session = New NotesSession 
+		id = CStr( Rnd( 1 )*1000000000 )
+		count = 0 
+		ReDim elements( 0 )
+	End Sub 
+
+
+	%REM 
+               Property Get source 
+               Description: Comments for Property Get 
+	%END REM 
+	Property Get source As String 
+		source = pSource 
+	End Property 
+	
+	
+	%REM
+		Property Get childs
+		Description: Comments for Property Get
+	%END REM
+	Property Get childs As Variant
+		childs = elements
+	End Property
+	
+	%REM
+		Property Get xPath
+		Description: Comments for Property Get
+	%END REM
+	Property Get xPath( q As String ) As variant
+		Dim xp As New xPath( Me )
+		xPath = xp.parse( q )
+	End Property
+	
+	%REM 
+               Function loadFile 
+               Description: Comments for Function 
+	%END REM 
+	Function loadFile( filename As String ) 
+		On Error GoTo eh
+		pSource = filename 
+		
+		Dim stream As NotesStream 
+		Set stream = session.createStream() 
+		Call stream.Open( filename ) 
+		
+		
+		Dim dom As NotesDOMParser 
+		Set dom = session.Createdomparser( stream ) 
+		Call loadDOM( dom ) 
+		
+		Call stream.Close()
+		
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me ) 
+	End Function 
+	
+	%REM
+		Function saveFile
+		Description: Comments for Function
+	%END REM
+	Function saveFile( filename As String )
+		On Error GoTo eh
+		
+		Dim stream As NotesStream 
+		Set stream = session.createStream() 
+		Call stream.Open( filename, "UTF-8" ) 
+		Call stream.Truncate()
+		
+		Call stream.writetext( getXML(), EOL_PLATFORM )
+		Call stream.Close()
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me ) 
+	End Function
+	
+	%REM 
+               Function loadURL 
+               Description: Comments for Function 
+	%END REM 
+	Function loadURL( url As String ) 
+		'http://www.breakingpar.com/bkp/home.nsf/0/87256B280015193F87256E6E006E29CE 
+		On Error GoTo eh
+		Dim xml As String	
+		
+		%REM
+		Dim script As String
+		
+		script = |
+use "GetHTML.ls"
+dim html as new GetHTML()
+'call html.setUserNameAndPassword( "<username>", "<password>" ) 'optional
+call html.readHTML( "| & url & |" )
+Call CacheManager.pushValue("XML", html.getHTML())
+|
+
+	'Evaluate script
+	
+	xml = CacheManager.getValue("XML")
+		%ENDREM
+		
+		Dim html As New GetHTML()
+		Call html.readHTML( url )
+		xml = html.getHTML()
+		
+		Call loadXML( xml )
+
+
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )			
+	End Function 
+	
+	%REM 
+               Function loadXML 
+               Description: Comments for Function 
+	%END REM 
+	Function loadXML( xml As String ) 
+		On Error GoTo eh
+		pSource = xml 
+		
+		Dim tmpDoc As NotesDocument 
+		Set tmpDoc = session.Currentdatabase.Createdocument() 
+		Dim tmpRTF As NotesRichTextItem 
+		Set tmpRTF = tmpDoc.Createrichtextitem("xml") 
+		Call tmpRTF.Appendtext(xml) 
+		'Call tmpDoc.save( True, False )
+		Dim dom As NotesDOMParser 
+		Set dom = session.Createdomparser( tmpRTF ) 
+		Call loadDOM( dom )
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me ) 
+	End Function 
+	
+	%REM 
+               Function loadDOM 
+               Description: Comments for Function 
+	%END REM 
+	Function loadDOM( dom As NotesDOMParser ) 
+		On Error GoTo eh
+		
+		dom.Inputvalidationoption = VALIDATE_NEVER
+		dom.Addxmldeclnode = True
+		
+		Call dom.Process 
+
+		Call walkTree( dom.Document )
+		
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me ) & " - " & dom.Log & " - " & dom.Logcomment
+	End Function 
+	
+	Private Sub walkTree ( node As NotesDOMNode )
+		On Error GoTo eh 
+		Dim child As NotesDOMNode 
+		Dim elt As NotesDOMNode 
+		Dim attrs As NotesDOMNamedNodeMap 
+		Dim a As NotesDOMAttributeNode 
+		
+		If Not node.IsNull Then   
+			Select Case node.NodeType 
+				
+				
+			Case DOMNODETYPE_ELEMENT_NODE:        '(1) Most nodes are Elements 
+				Call setName( node.Nodename ) 
+				
+				Set elt = node 
+				
+				Dim numAttributes As Integer 
+				Dim numChildren As Integer 
+				
+				numAttributes = elt.attributes.numberofentries 
+				
+				Set attrs = elt.Attributes     ' Get attributes 
+				
+				Dim i As Integer 
+				For i = 1 To numAttributes     ' Loop through them 
+					Set a = attrs.GetItem(i) 
+					Call addAttribute( a.Nodename, a.Nodevalue ) 
+				Next 
+				
+				numChildren =  elt.NumberOfChildNodes 
+				Set child = elt.FirstChild     ' Get child 
+				While numChildren > 0 
+					Dim e As New element 
+					Call e.walkTree( child ) 
+					Call addElement( e ) 
+					
+					'Call walkTree(child) 
+					Set child = child.NextSibling   ' Get next child 
+					numChildren = numChildren - 1 
+				Wend 
+				
+		
+			Case DOMNODETYPE_ATTRIBUTE_NODE			'(2)
+				Print "Attribute"
+				
+			Case DOMNODETYPE_TEXT_NODE:           '(3) Plain text node 
+				value = node.Nodevalue
+				
+			Case DOMNODETYPE_CDATASECTION_NODE:           '(4) CDATA sections 
+				'        domParser.Output("CDATA Section node: "+node.NodeName) 
+				'        domParser.Output(" has value of "+node.NodeValue+LF) 
+				value = node.nodeValue 
+				
+				
+			Case DOMNODETYPE_ENTITYREFERENCE_NODE:        '(5) Handle entities 
+				reference = node.nodename 
+				
+			Case DOMNODETYPE_ENTITY_NODE:					'(6)
+				Print "Entity"
+			
+				
+			Case DOMNODETYPE_PROCESSINGINSTRUCTION_NODE:  '(7) Handle PI nodes 
+				Dim piNode As NotesDOMProcessingInstructionNode 
+				
+				Set piNode = node 
+				instructions( piNode.Target ) = piNode.Data 
+				 
+			Case DOMNODETYPE_COMMENT_NODE:                '(8) Comments 
+				comment = comment & node.Nodevalue 
+				
+				 
+			Case DOMNODETYPE_DOCUMENT_NODE: 		'(9)
+				Set child = node.FirstChild   ' Get the first node 
+				Dim numChildNodes As Integer 
+				numChildNodes = node.NumberOfChildNodes 
+				'        domParser.Output(" has "+Cstr(numChildNodes)+" Child Nodes"+LF) 
+				
+				While numChildNodes > 0
+					Call walkTree(child) 
+					Set child = child.NextSibling ' Get next node 
+					numChildNodes = numChildNodes - 1 
+					
+				Wend 
+				
+			Case DOMNODETYPE_DOCUMENTTYPE_NODE:   '(10) It is a <!DOCTYPE> tag 
+				documenttype = node.nodename 
+			
+			Case DOMNODETYPE_DOCUMENTFRAGMENT_NODE: '	(11)
+				Print "Document fragment"
+				
+			Case DOMNODETYPE_NOTATION_NODE: '(12)
+				Print "Notation"
+			
+			Case DOMNODETYPE_XMLDECL_NODE: '(13)
+				Dim xmldeclNode As NotesDOMXMLDeclNode
+				Set xmldeclNode = node
+				Dim s As String
+				
+				If xmldeclNode.version <> "" Then
+					s = parseParam( |version="%1"|, xmldeclNode.version )
+				End If
+				
+				If xmldeclNode.encoding <> "" Then
+					If s <> "" Then s = s & " "
+					s = s & parseParam( |encoding="%1"|, xmldeclNode.encoding )
+				End If
+				
+				instructions( "xml" ) = s
+				
+			Case Else: 
+				
+				'        domParser.Output("Ignoring node: "+Cstr(node.NodeType)+LF) 
+				
+		End Select  'node.NodeType 
+		End If        'Not node.IsNull
+		
+		
+done:
+		Exit sub
+eh:
+		Error Err, getErrorInfo( Me ) 
+	End Sub 
+	
+	Function setName( elementName As String ) 
+		me.elementName = elementName 
+	End Function 
+	
+	%REM 
+               Function addAttribute 
+               Description: Comments for Function 
+	%END REM 
+	Function addAttribute( attributeName As String, value As String ) 
+		On Error GoTo eh
+		attributes( attributeName ) = value
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me ) 
+	End Function 
+	
+	%REM 
+               Function setValue 
+               Description: Comments for Function 
+	%END REM 
+	Function setValue( value As String )
+		On Error GoTo eh 
+		me.value = value
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me ) 
+	End Function
+	
+	Public Property Get depth() As Integer
+		On Error GoTo eh
+		If parent Is Nothing Then
+			depth = 0
+		Else
+			depth = parent.depth()+1
+		End If
+		 
+done:
+		Exit property
+eh:
+		Error Err, getErrorInfo( Me ) 
+		
+	End Property
+	
+	%REM
+		Function eraseElement
+		Description: Comments for Function
+	%END REM
+	Function removeChild( child As Element )
+		On Error GoTo eh
+		Dim i As Integer
+		Dim x As Integer
+		
+		For i = 0 To count-1
+			If elements( i ).id = child.id Then
+				'found - remove this from the list
+				
+				Set elements( i ) = Nothing 'reset this
+				For x = i To count-2 'move the rest
+					Set elements( x ) = elements( x+1 )
+				Next 
+				count = count-1
+				ReDim Preserve elements( count )
+				
+				GoTo done
+			End If
+		Next
+		
+done:
+		Exit function
+eh:
+		Error Err, getErrorInfo( Me ) 
+		
+	End Function
+	
+	%REM 
+               Function addElement 
+               Description: Comments for Function 
+	%END REM 
+	Function addElement( element As Element ) 
+		On Error GoTo eh
+		
+		Set element.parent = Me
+		
+		If element.getName() = "" Then 
+			'update current 
+			Call setValue( element.getValue()) 
+		Else 
+			'add sub 
+			If count = 0 Then 
+				ReDim elements( 0 ) 
+			Else 
+				ReDim Preserve elements( count ) 
+			End If 
+			Set elements( count ) = element 
+			count = count+1 
+		End If 
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function 
+
+	%REM 
+		Function getName 
+		Description: Comments for Function 
+	%END REM 
+	Function getName() As String 
+		getName = elementName 
+	End Function 
+	
+	%REM 
+		Function getValue 
+		Description: Comments for Function 
+	%END REM 
+	Function getValue() As String 
+		getValue = value 
+	End Function 
+	
+	%REM
+		Function getRoot
+		Description: Comments for Function
+	%END REM
+	Function getRoot() As Element
+		If parent Is Nothing then
+			Set getRoot = Me
+		Else
+			Set getRoot = parent.getRoot()
+		End if
+	End Function
+	
+	%REM
+		Function getAttribute
+		Description: Comments for Function
+	%END REM
+	Function getAttribute( attribName As String ) As String
+		attribName = LCase(attribName)
+		If IsElement( attributes( attribName )) Then
+			getAttribute = attributes( attribName )
+		Else
+			getAttribute = ""
+		End If
+	End Function
+	
+	%REM
+		Property Get hasAttributes
+		Description: Comments for Property Get
+	%END REM
+	Public Property Get hasAttributes() As Boolean
+		ForAll entry In attributes
+			If entry <> "" Then
+				hasAttributes = True
+				Exit Property
+			End If
+		End ForAll
+		hasAttributes = False
+	End Property
+	
+	%REM
+		Property Get hasValue
+		Description: Comments for Property Get
+	%END REM
+	Public Property Get hasValue() As Boolean
+		hasValue = ( FullTrim( getValue ) <> "" )
+	End Property
+	
+	%REM
+		Property Get hasElements
+		Description: Comments for Property Get
+	%END REM
+	Public Property Get hasElements() As Boolean
+hasElements = ( count > 0 )
+Exit property
+
+		ForAll entry In elements
+			hasElements = True
+			Exit property			
+		End ForAll
+		hasElements = False
+	End Property
+	
+	%REM
+		Property Get getElements
+		Description: Comments for Property Get
+	%END REM
+	Public property Get getElements() As Variant
+		getElements = elements
+	End Property
+	
+	
+	%REM
+	Function escape
+	Description: Comments for Function
+%END REM
+Private Function escape( s As String ) As String
+	Dim result As String
+	result = s
+	result = Replace( result, "&", "&amp;" )
+	result = Replace( result, "<", "&lt;" )
+	
+	escape = result
+End Function
+
+	%REM 
+               Function getXML 
+               Description: Comments for Function 
+	%END REM 
+	Function getXML() As String
+		On Error GoTo eh 
+		Dim xml As String 
+		Dim elementname As String
+		
+		xml = ""
+		elementname = getName()
+		
+		Dim tabs As String
+		tabs = String( depth, Chr( 9 ))
+		
+		
+		'instructions
+		If IsList( instructions ) then
+			ForAll instruct In instructions
+				xml = xml & parseParams( |<?%1 %2?>|, ListTag( instruct ), instruct, "", "" ) & Chr( 10 )
+			End ForAll
+		End If
+		
+		'element
+		xml = xml & tabs & |<| & elementname
+		
+		'attributes
+		If hasAttributes then
+			ForAll attrib In attributes 
+				xml = xml & " " & ListTag( attrib ) & |="| & attrib & |"| 
+			End ForAll 
+		End If
+		
+		If Not hasValue And Not hasElements then
+			'end the tag right here
+			xml = xml & |/>| & Chr( 10 ) 
+		else
+			xml = xml & |>| 
+			
+			If hasValue Then 
+				xml = xml & escape( getValue())	
+			End if
+			If hasElements then	
+				xml = xml & Chr( 10 )
+			End if
+			
+			ForAll element In elements 
+				If Not element Is Nothing then
+					xml = xml & element.getXML()
+				End if 
+			End ForAll 
+			
+			If Not hasValue Then
+				If hasElements() Then xml = xml & tabs 
+			End If
+			xml = xml & |</| & elementname & |>| & Chr( 10 ) 
+		End if	
+		getXML = xml 
+		
+		
+done:
+		Exit Function
+eh:
+		stop
+		Error Err, getErrorInfo( Me )
+	End Function 
+End Class 
+
+
+	
+%REM @DOC #howto How to use the XML parser / xPath stuff
+Class XML
+
+<u>Sample code</u>
+<pre>
+	Dim xml As New XML()
+	Call xml.loadFile( "C:\product.xml" )
+	
+	Dim v As Variant
+	v = xml.xPath("\store\products")'returns an array with the two product elements
+</pre>
+
+<u>Sample file</u>
+<pre>	
+&lt;?xml version="1.0" encoding="UTF-8"?>
+&lt;store>
+    &lt;Country>Denmark&lt;/Country>
+    &lt;Products>
+       &lt;product>
+			&lt;id>1234&lt;/id>
+			&lt;name>Stuff&lt;/name>
+			&lt;price currency="dkk">10&lt;/price>
+	   &lt;/product>
+	   &lt;product>
+			&lt;id>4321&lt;/id>
+			&lt;name>Thing&lt;/name>
+			&lt;price>25&lt;/price>
+	   &lt;/product>
+    &lt;/Products>
+&lt;/store>
+</pre>
+%END REM
+Class XML As Element
+	
+	%REM
+		Function getValues
+		current: xml element object
+		xpathQuery: xpath reference to the element(s)
+		returns an array with all the values from the matching elements
+	%END REM
+	Function getValues( current As Variant, xpathQuery As String ) As Variant
+		On Error GoTo eh
+		Dim v As Variant
+		v = current.xPath(xpathQuery)
+		
+		If Not IsArray( v ) Then
+			getValues = ""
+		Else
+			Dim a As New Array( Null )
+			ForAll e In v
+				Call a.add( e.getValue())
+			End ForAll
+			getValues = a.elements
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+		
+	End Function
+End Class
+
+
+
+
+%REM
+	Class xPathParser
+	http://msdn.microsoft.com/en-us/library/ms256086.aspx
+	http://www.w3schools.com/XPath/xpath_syntax.asp
+	
+	http://www.w3.org/TR/xquery-xpath-parsing/
+%END REM
+Class xPath As AbstractObject
+	Private current As Element
+	
+	Private query As string
+	Private pos As Integer 'current position in the query string
+	Private char As String 'the current charecteer in the query string.  
+	Private spelling As string 'current spelling
+	Private symbol As string 'current symbol
+	
+	Private CHARS_ALFA As String
+	Private CHARS_DIGITS As string
+	
+	
+	%REM
+	Symbols
+		EOF			chr( 0 )
+		current		.
+		parent		..
+		slash		/
+		any			//
+		[			[ start predicate
+		]			] end predicate
+		(			( start parentese
+		)			) end parantese
+		identifier	any other spelling
+	%END REM
+	
+	%REM
+		Sub New
+		Description: Comments for Sub
+	%END REM
+	Sub New( element As Element )
+		If element.parent Is Nothing Then
+			'miss some kind of root (structual bug)
+			Set me.current = New Element()
+			Call current.addElement( element )
+		Else
+			Set me.current = element
+			End if
+		CHARS_ALFA = "abcdefghijklmnopqrstuwvxyzABCDEFGHIJKLMNOPQRSTUWVXYZ"
+		CHARS_ALFA = CHARS_ALFA & "æøåÆØÅ_"
+		CHARS_DIGITS = "0123456789"
+		
+	End Sub
+	
+	%REM
+		Function nextChar
+		Description: Comments for Function
+	%END REM
+	Private Function nextChar
+		On Error GoTo eh
+		pos = pos+1
+		char = Mid( query, pos, 1 )
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function nextSymbol
+		Description: Comments for Function
+	%END REM
+	Private Function nextSymbol 
+		On Error GoTo eh
+		spelling = ""
+		
+		Select Case char
+			Case Chr( 0 ): symbol = "EOF"
+			Case ".": 
+				nextChar
+				If char = "." Then
+					symbol = "parent"
+					nextChar
+				Else
+					symbol = "current"
+				End If
+			Case "/":
+				nextChar
+				If char = "/" Then
+					symbol = "any"
+					nextChar
+				Else
+					symbol = "slash"
+				End If
+			Case "[": 
+				symbol = "[" 
+				nextChar
+			Case "]": 
+				symbol = "]" 
+				nextChar
+			Case "(":
+				symbol = "(" 
+				nextChar
+			Case ")":
+				symbol = ")" 
+				nextChar
+			Case Else
+				If InStr( CHARS_ALFA, char )>0 then
+					While InStr( CHARS_ALFA & CHARS_DIGITS, char )>0
+						spelling = spelling & char
+						nextChar
+					Wend
+					symbol = "identifier"
+				Else
+					symbol = "unknown"
+					nextChar
+				End if
+		End Select
+
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function doStatement
+		Description: Comments for Function
+	%END REM
+	Private Function doStatement( source As Variant, recursive As Boolean ) As Variant
+		On Error GoTo eh
+		Dim result As Variant
+		If Not IsArray( source ) Then 
+			If Not IsObject( source ) Then Exit Function
+			If source Is Nothing Then Exit Function
+		End if
+		
+		Select Case symbol
+			Case "current":
+				accept( "current" )
+				result = doStatement( source, False )				
+				
+			Case "any": 
+				accept( "any")
+				result = doElement( source, True )
+				accept( "identifier")
+				result = doStatement( result, False )
+				
+			Case "slash": 
+				accept( "slash" )
+				result = doStatement( source, False )
+				
+			Case "identifier": 
+				result = doElement( source, False )
+				accept( "identifier")
+				result = doStatement( result, False )
+				
+			Case "EOF":
+				result = source
+		End Select
+		
+		doStatement = result
+		
+		
+done:
+		Exit Function
+eh:
+		stop
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function doAny
+		Description: Comments for Function
+	%END REM
+	Private Function doAny()
+		On Error GoTo eh
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function add
+		Description: Comments for Function
+	%END REM
+	Private Function add( e1 As Variant, e2 As Variant ) As Variant
+		On Error GoTo eh
+		Dim result As Variant
+		
+		Dim a1 As Variant
+		Dim a2 As Variant
+		
+		'convert to arrays
+		If Not IsArray( e1 ) And Not IsEmpty( e1 ) And TypeName( e1 ) <> "STRING" Then
+			ReDim a1( 0 )
+			Set a1( 0 ) = e1
+		Else
+			a1 = e1
+		End If
+		If Not IsArray( e2 ) And Not IsEmpty( e2 ) And TypeName( e2 ) <> "STRING" Then
+			ReDim a2( 0 )
+			Set a2( 0 ) = e2
+		Else
+			a2 = e2
+		End If
+		
+		'append
+		If IsArray( a1 ) Then
+			If IsArray( a2 ) Then
+				result = ArrayAppend( a1, a2 ) 'both a1 and a2 has values
+			Else
+				result = a1 'only a1 has a value
+			End If
+		Else 'a1 is empty
+			If IsArray( a2 ) Then
+				result = a2 'only a2 has a value
+			Else
+				result = "" 'no values
+			End If
+		End If
+		
+		add = result
+		
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function doIdentifier
+		Description: Comments for Function
+	%END REM
+	Private Function doElement( source As Variant, recursive As Boolean ) As Variant
+		On Error GoTo eh
+		Dim result As Variant
+		
+		Dim v As Variant
+		If Not IsArray( source ) Then
+			redim v( 0 )
+			Set v( 0 ) = source
+		Else
+			v = source
+		End If
+		
+		ForAll e In v
+			If e Is Nothing Then GoTo done
+			ForAll c In e.childs
+				If c Is Nothing Then GoTo done
+				If StrComp( c.getName, spelling, 5 ) = 0  Then
+				'If c.getName = spelling Then
+					result = add( result, c )
+				End If
+				
+				If recursive Then
+					result = add( result, doElement( c, True ))
+				End If
+				
+			End forall
+		End ForAll
+		
+done:
+		doElement = result
+
+		Exit Function
+eh:
+		stop
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function accept
+		Description: Comments for Function
+	%END REM
+	Private Function accept( expectedSymbol As String )
+		On Error GoTo eh
+		If expectedSymbol = symbol Then
+			nextSymbol
+		Else
+			Error 9112, parseParams( "Symbol expected: '%1' at position %3 in '%4'. (Current symbol %2)", expectedSymbol, symbol, pos, query )
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function parse
+		Description: Comments for Function
+	%END REM
+	Function parse( q As String ) As Variant 
+		On Error GoTo eh
+		'init
+		Me.query = Replace( q, "\", "/" ) & Chr( 0 ) '\ is an illegal char
+		pos = 0
+		nextChar
+		nextSymbol
+
+		Dim source( 0 ) As Element
+		Dim result As Variant
+		
+		Dim root As Element
+		Set root = current.getRoot
+		
+		
+		'process
+	'	Do Until symbol = "EOF"
+						
+			Select Case symbol
+			Case "current":
+				accept( "current" )
+				result = doStatement( current, False )				
+				
+			Case "any": 
+				accept( "any")
+				result = doElement( root, true )
+				accept( "identifier")
+				result = doStatement( result, false )
+				
+			Case "slash": 
+				accept( "slash" )
+				result = doStatement( root, False )
+				
+			Case "identifier": 
+				result = doElement( current, false )
+				accept( "identifier")
+				result = doStatement( result, false )
+				
+			Case "parent": 
+				accept( "parent")
+				result = doStatement( current.parent, False )
+				
+		End Select
+			
+	'		nextsymbol
+	'	Loop
+	
+		accept( "EOF" )
+			
+		parse = result
+		
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+End Class
+
+%REM
+	Class GetHTML
+	
+	Reads an URL and returns the xml or html text
+	
+	dim html as new GetHTML()
+	call html.setUserNameAndPassword( "<username>", "<password>" ) 'optional
+	call html.readHTML( "http://www.majkilde.dk" )
+	print "HTML code retrieved: ", html.getHTML()
+%END REM
+Class GetHTML As AbstractObject
+	Private js As JAVASESSION
+	Private getHTMLClass As JAVACLASS
+	Private getHTMLObject As JavaObject
+	
+	%REM
+		Sub new
+		Description: Comments for Sub
+	%END REM
+	Public Sub New
+		On Error GoTo eh
+		Set js = New JAVASESSION
+		Set getHTMLClass = js.GetClass("GetHTML")
+		Set getHTMLObject = getHTMLClass.CreateObject
+		
+done:
+		Exit Sub
+eh:
+		Error Err, getErrorInfo( Me )
+	End Sub
+	
+	
+	%REM
+		Sub setUserNameAndPassword
+		Description: Comments for Sub
+	%END REM
+	Public Function setUserNameAndPassword( username As String, password As String)
+		On Error GoTo eh
+		Call getHTMLObject.setUserNameAndPassword(userName, password)
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )	
+	End Function
+
+	%REM
+		Sub readHTML
+		Description: Comments for Sub
+	%END REM
+	%REM
+		Function readHTML
+		Description: Comments for Function
+	%END REM
+	Public Function readHTML(url As String)
+		On Error GoTo eh
+	
+		Call getHTMLObject.readHTML(url)
+		
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )	
+	End Function
+	
+	
+	%REM
+		Function numLines
+		Description: Comments for Function
+	%END REM
+	Public Function numLines As Long
+		On Error GoTo eh
+		numLines = getHTMLObject.numLines()
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )	
+	End Function
+	
+	
+	%REM
+		Function getHTML
+		Description: Comments for Function
+	%END REM
+	Public Function getHTML() As String
+		On Error GoTo eh
+		Dim i As Long
+		Dim html As String
+		For i = 0 To numLines()
+			html = html & getHTMLLine( i )
+		Next
+		
+		getHTML = html
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function getHTML
+		Description: Comments for Function
+	%END REM
+	Public Function getHTMLLine( lineNumber As Long ) As String
+		On Error GoTo eh
+		getHTMLLine = getHTMLObject.getHTML(lineNumber)
+		
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+End Class
+'++LotusScript Development Environment:2:2:Initialize:1:10
+Sub Initialize
+	randomize
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

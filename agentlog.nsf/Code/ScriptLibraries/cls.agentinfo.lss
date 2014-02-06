@@ -1,0 +1,281 @@
+'++LotusScript Development Environment:2:5:(Options):0:72
+'lib.design.agent: 
+
+Option Public
+Option Declare
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class clsDesignAgent
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+Const wAPIModule = "NNOTES"  ' Windows/32
+Const NOTE_CLASS_FILTER = &H0200
+
+Const ASSISTINTERVAL_TYPE_NONE% = 0		'/* Unknown */
+Const ASSISTINTERVAL_TYPE_MINUTES% = 1
+Const ASSISTINTERVAL_TYPE_DAYS% = 2
+Const ASSISTINTERVAL_TYPE_WEEK% = 3
+Const ASSISTINTERVAL_TYPE_MONTH% = 4
+
+Type AssistInfo
+	Version As Integer
+	TriggerType As Integer  ' 0 none, 1 schedule, 2 new mail, 3 paste, 4 manual, 5 update, 6 router
+	SearchType As Integer  ' 0 none, 1 all, 2 new, 3 new/mod, 4 selected, 5 view, 6 unread, 7 prompt, 8 UI
+	IntervalType As Integer  ' 0 none, 1 minutes, 2 days, 3 weeks, 4 months
+	Interval As Integer
+	Time1 As Variant  ' Start time (1/100th of a second since midnight)
+	Time2 As Variant  ' Long (weekday or day of month) or end time (1/100th of a second since midnight)
+	StartTime As Variant  ' Time/Date
+	EndTime As Variant  ' Time/Date
+	Flags As Long  ' 1 hidden, 2 no weekends, 4 store highlights, 8 mail/paste, 16 choose server
+	Spare(15) As Long
+End Type
+
+Type BlockID
+	hPool As Long
+	Block As Integer
+End Type
+
+Declare Function ConvertTIMEDATEToText Lib wAPIModule Alias "ConvertTIMEDATEToText" (  ByVal zI As Long, ByVal zT As Long, ByVal T As Long, ByVal S As String, ByVal nS As Integer, nT As Integer) As Integer
+Declare Function ConvertTextToTIMEDATE Lib wAPIModule Alias "ConvertTextToTIMEDATE" (  ByVal zI As Long, ByVal zT As Long, pS As Long, ByVal nS As Integer, ByVal T As Long) As Integer
+Declare Private Function NIFFindDesignNote Lib wAPIModule Alias "NIFFindDesignNote" (  ByVal hDB As Long, ByVal S As String, ByVal C As Integer, N As Long) As Integer
+Declare Private Function NSFDbOpen Lib wAPIModule Alias "NSFDbOpen" (  ByVal PathName As String, DbHandle As Long) As Integer
+Declare Private Function NSFDbClose Lib wAPIModule Alias "NSFDbClose" (  ByVal DbHandle As Long) As Integer
+Declare Private Function NSFNoteOpen Lib wAPIModule Alias "NSFNoteOpen" (  ByVal hDB As Long, ByVal NoteID As Long, ByVal F As Integer, hNT As Long) As Integer
+Declare Private Function NSFNoteClose Lib wAPIModule Alias "NSFNoteClose" (  ByVal hNT As Long) As Integer
+Declare Function NSFItemInfo Lib wAPIModule Alias "NSFItemInfo" (  ByVal hNT As Long, ByVal N As String, ByVal nN As Integer,  iB As BlockID, D As Integer, vB As BlockID, nV As Long) As Integer
+Declare Private Function NSFNoteUpdate Lib wAPIModule Alias "NSFNoteUpdate" (  ByVal hNT As Long, ByVal F As Integer) As Integer
+Declare Private Function NSFNoteSign Lib wAPIModule Alias "NSFNoteSign" (ByVal hNT As Long) As Integer
+Declare Function NSFItemSetTime Lib wAPIModule Alias "NSFItemSetTime" (  ByVal hNT As Long, ByVal N As String, T As Any) As Integer
+Declare Function NSFItemDelete Lib wAPIModule Alias "NSFItemDelete" (  ByVal hNT As Long, ByVal N As String, ByVal nN As Integer) As Integer
+Declare Private Function OSMemAlloc Lib wAPIModule Alias "OSMemAlloc" (  ByVal T As Integer, ByVal N As Long, hM As Long) As Long
+Declare Private Function OSMemFree Lib wAPIModule Alias "OSMemFree" (  ByVal hM As Long) As Long
+Declare Private Function OSLockObject Lib wAPIModule Alias "OSLockObject" (  ByVal H As Long) As Long
+Declare Private Sub OSUnlockObject Lib wAPIModule Alias "OSUnlockObject" (  ByVal H As Long)
+Declare Private Function OSPathNetConstruct Lib wAPIModule Alias "OSPathNetConstruct" (  ByVal NullPort As Long, ByVal Server As String, ByVal FIle As String, ByVal PathNet As String) As Integer
+Declare Sub OSCurrentTIMEDATE Lib wAPIModule Alias "OSCurrentTIMEDATE" (  T As Any)
+Declare Private Sub Peek Lib "MSVCRT" Alias "memcpy" (  D As Any, ByVal P As Long, ByVal N As Long)
+Declare Private Sub Poke Lib "MSVCRT" Alias "memcpy" (  ByVal D As Long, D As Any, ByVal N As Long)
+Declare Private Sub PokeString Lib "MSVCRT" Alias "memcpy" (  ByVal D As Long, ByVal S As String, ByVal N As Long)
+
+Class clsDesignAgent
+	
+	Private nobjSession As NotesSession
+	Private db As NotesDatabase
+	Private agent As String
+	
+	Sub New(db As NotesDatabase, strName As String)
+		agent = strName
+		Set nobjSession = New NotesSession
+		Set me.db = db		
+	End Sub
+	
+	Function enable()
+		Call setStatus(True)
+	End Function
+	
+	Function disable()
+		Call setStatus(False)
+	End Function
+	
+	Function setStatus(bStatus As Boolean)
+		Dim nobjAgent As NotesAgent
+		Set nobjAgent = db.GetAgent(agent)
+		nobjAgent.IsEnabled = bStatus
+		Call nobjAgent.Save()		
+	End Function
+	
+	Function getStatus() As Boolean
+		Dim nobjAgent As NotesAgent
+		Set nobjAgent = db.GetAgent(agent)
+		getStatus = nobjAgent.IsEnabled
+	End Function
+	
+	%REM
+		Function getNote
+		Description: Returns the NotesDocument for the Agent / majkilde
+	%END REM
+	Function getNote() As NotesDocument
+		Dim np As String	
+		np$ = Space(1024)
+		OSPathNetConstruct 0, db.Server, db.FilePath, np$
+		
+		Dim hDB As Long
+		NSFDbOpen np$, hDB
+		If hDB = 0 Then
+			Exit function
+		End If
+		
+		Dim pt As Long
+		Dim ti As String
+		pt& = InStr(agent, "|")
+		If pt& = 0 Then ti$ = Trim$(agent) Else ti$ = Trim$(Left$(agent, pt& - 1))
+		
+		Dim nID As Long
+		NIFFindDesignNote hDB, ti$, NOTE_CLASS_FILTER, nID
+		If nID = 0 Then
+			Exit function
+		End If
+		
+		Set getNote = db.Getdocumentbyid( Hex$( nId ))
+
+	End Function
+	
+	Sub getAssistInfo(info As AssistInfo)
+		
+		Dim np As String	
+		np$ = Space(1024)
+		OSPathNetConstruct 0, db.Server, db.FilePath, np$
+		
+		Dim hDB As Long
+		NSFDbOpen np$, hDB
+		If hDB = 0 Then
+			MessageBox "Can't open database", 16
+			Exit Sub
+		End If
+		
+		Dim pt As Long
+		Dim ti As String
+		pt& = InStr(agent, "|")
+		If pt& = 0 Then ti$ = Trim$(agent) Else ti$ = Trim$(Left$(agent, pt& - 1))
+		
+		Dim nID As Long
+		NIFFindDesignNote hDB, ti$, NOTE_CLASS_FILTER, nID
+		If nID = 0 Then
+			MessageBox "Can't find agent " & ti$, 16
+			Exit Sub
+		End If
+		
+		If InStr(db.GetDocumentByID(Hex$(nID)).~$Flags(0), "f") = 0 Then
+			MessageBox ti$ & " is not an agent", 16
+			Exit Sub
+		End If
+		
+		Dim hNT As Long
+		NSFNoteOpen hDB, nID, 0, hNT
+		
+		Dim dt As Integer
+		Dim nv As Long
+		Dim p As Long
+		Dim v As Long
+		Dim t As String
+		Dim nt As Integer
+		Dim iB As BlockID, vB As BlockID
+		NSFItemInfo hNT&, "$AssistInfo", 11, iB, dt%, vB, nv&
+		If Not vB.hPool = 0 Then
+			p& = OSLockObject(vB.hPool) + vB.Block
+			Peek info.Version, p& + 2, 2
+			Peek info.TriggerType, p& + 4, 2
+			Peek info.SearchType, p& + 6, 2
+			Peek info.IntervalType, p& + 8, 2
+			Peek info.Interval, p& + 10, 2
+			Peek v&, p& + 12, 4
+			If v& <= 31 Then info.Time1 = v& Else info.Time1 = CDat(v&/100/60/60/24)
+			Peek v&, p& + 16, 4
+			If v& <= 31 Then info.Time2 = v& Else info.Time2 = CDat(v&/100/60/60/24)
+			t$ = Space(81)
+			ConvertTIMEDATEToText 0, 0, p& + 20, t$, 80, nt%
+			If Not nt% = 0 Then info.StartTime = CDat(Left$(t$, nt%))
+			t$ = Space(81)
+			ConvertTIMEDATEToText 0, 0, p& + 28, t$, 80, nt%
+			If Not nt% = 0 Then info.EndTime = CDat(Left$(t$, nt%))
+			Peek info.Flags, p& + 36, 4
+			OSUnlockObject vB.hPool
+		End If
+		
+		NSFNoteClose hNT
+		NSFDbClose hDB
+	End Sub
+	
+	Sub setAssistInfo(info As AssistInfo)
+		
+		Dim np As String	
+		np$ = Space(1024)
+		OSPathNetConstruct 0, db.Server, db.FilePath, np$
+		
+		Dim hDB As Long
+		NSFDbOpen np$, hDB
+		If hDB = 0 Then
+			MessageBox "Can't open database", 16
+			Exit Sub
+		End If
+		
+		Dim pt As Long
+		Dim ti As String
+		pt& = InStr(agent, "|")
+		If pt& = 0 Then ti$ = Trim$(agent) Else ti$ = Trim$(Left$(agent, pt& - 1))
+		
+		Dim nID As Long
+		NIFFindDesignNote hDB, ti$, NOTE_CLASS_FILTER, nID
+		If nID = 0 Then
+			MessageBox "Can't find agent " & ti$, 16
+			Exit Sub
+		End If
+		
+		If InStr(db.GetDocumentByID(Hex$(nID)).~$Flags(0), "f") = 0 Then
+			MessageBox ti$ & " is not an agent", 16
+			Exit Sub
+		End If
+		
+		Dim hNT As Long
+		NSFNoteOpen hDB, nID, 0, hNT
+		
+		Dim dt As Integer
+		Dim nv As Long
+		Dim p As Long
+		Dim b As Long
+		Dim t As String
+		Dim iB As BlockID, vB As BlockID
+		NSFItemInfo hNT&, "$AssistInfo", 11, iB, dt%, vB, nv&
+		If Not vB.hPool = 0 Then
+			p& = OSLockObject(vB.hPool) + vB.Block
+			Poke p& + 2, info.Version, 2
+			Poke p& + 4, info.TriggerType, 2
+			Poke p& + 6, info.SearchType, 2
+			Poke p& + 8, info.IntervalType, 2
+			Poke p& + 10, info.Interval, 2
+			If IsDate(info.Time1) Then Poke p& + 12, CLng(CDbl(info.Time1) * 24 * 60 * 60 * 100), 4 _
+			Else Poke p& + 12, CLng(info.Time1), 4
+			If IsDate(info.Time2) Then Poke p& + 16, CLng(CDbl(info.Time2) * 24 * 60 * 60 * 100), 4 _
+			Else Poke p& + 16, CLng(info.Time2), 4
+			Dim hM As Long
+			OSMemAlloc 0, 81, hM
+			b& = OSLockObject(hM)
+			If IsDate(info.StartTime) Then
+				t$ = CStr(info.StartTime) & Chr$(0)
+				PokeString b&, t$, Len(t$)
+				ConvertTextToTIMEDATE 0, 0, b&, 81, p& + 20
+			Else
+				Poke p& + 20, 0&, 4
+				Poke p& + 24, 0&, 4
+			End If
+			If IsDate(info.EndTime) Then
+				t$ = CStr(info.EndTime) & Chr$(0)
+				PokeString b&, t$, Len(t$)
+				ConvertTextToTIMEDATE 0, 0, b&, 81, p& + 28
+			Else
+				Poke p& + 28, 0&, 4
+				Poke p& + 32, 0&, 4
+			End If
+			Poke p& + 36, info.Flags, 4
+			OSUnlockObject hM
+			OSMemFree hM
+			OSUnlockObject vB.hPool
+		End If
+		
+		Dim T1(1) As Long  ' TIMEDATE						' NB
+		OSCurrentTimeDate T1(0)								' NB
+		NSFItemDelete hNT, "$AssistVersion", 14			' NB
+		NSFItemSetTime hNT, "$AssistVersion", T1(0)	' NB
+		NSFNoteSign hNT											' NB
+		' The agent has been given a new version number (time date) and signed
+		' This is necessary to avoid a message about a changed and corrupted element
+		
+		NSFNoteUpdate hNT, 0
+		NSFNoteClose hNT
+		NSFDbClose hDB
+		
+	End Sub
+	
+End Class
+

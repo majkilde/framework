@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><note class="form" maintenanceversion="1.0" replicaid="C12579E700306BE2" version="9.0" xmlns="http://www.lotus.com/dxl">
+<noteinfo noteid="38e" sequence="6" unid="9F38ABEB266904C0C12576C1004622B6">
+<created><datetime>20100205T134604,06+01</datetime></created>
+<modified><datetime dst="true">20120421T104858,30+02</datetime></modified>
+<revised><datetime dst="true">20110408T105421,78+02</datetime></revised>
+<lastaccessed><datetime dst="true">20120421T104858,30+02</datetime></lastaccessed>
+<addedtofile><datetime dst="true">20120421T104858,30+02</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Manager/O=mths</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name></updatedby>
+<wassignedby><name>CN=Manager/O=mths</name></wassignedby>
+<item name="$Flags"><text>34CiQ</text></item>
+<item name="$FlagsExt"><text>D</text></item>
+<item name="$ImagesWide" sign="true"><number>1</number></item>
+<item name="$ImagesHigh" sign="true"><number>1</number></item>
+<item name="$ImagesColorize" sign="true"><number>0</number></item>
+
+
+<item name="$MimeType" sign="true"><text>image/jpeg</text></item>
+<item name="$FileModDT" sign="true"><datetime>20041116T205140,08+01</datetime></item>
+<item name="$ImageNames" sign="true"><text>excel.JPG</text></item>
+<item name="$TITLE" sign="true"><textlist><text>attachmate.icon.excel</text><text>icon.excel.jpg</text></textlist></item>
+<item name="$DesignerVersion"><text>8.5</text></item>
+<item name="$Comment"><text>Rev 6.6</text></item></note>

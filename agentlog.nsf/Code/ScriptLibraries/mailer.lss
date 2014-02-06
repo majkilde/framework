@@ -1,0 +1,420 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+%REM
+	Library mailer
+	Created Oct 28, 2009 by Jakob Majkilde/NDK/GEAP
+	Description: Comments for Library
+%END REM
+Option Public
+Option Declare
+Use "cls.system"
+Use "cls.log.6"
+Use "cls.fw.memo.ui"
+
+
+%REM
+	Rev 6.16 majkilde 27.05.2010
+- Error counter changed from int to long
+	Rev 6.14 majkilde 16.06.2011
+	- Added a redirect option
+	Rev 6.13.1 majkilde 14.4.2010
+	- Fixed some minors
+	Rev 6.11 majkilde 6.4.2010
+	- Better section titles
+	Rev 6.10 majkilde 28.01.2010
+	- More content improvements
+	Rev 6.8.7 majkilde 14.1.2010
+	- Improvements made to the mail content
+	Rev 6.8.5 majkilde 7.1.2010
+	- Now it works
+%END REM
+
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class Mailer2 As AbstractObject
+Declare Class Agent As AbstractObject
+Declare Class Recipient As AbstractObject
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+%REM
+	Class Mailer
+	Description: Comments for Class
+%END REM
+Class Mailer2 As AbstractObject
+'############################################################################################
+	Private db As NotesDatabase
+'	Private mails List As AbstractMemo
+	Private recipients List As Recipient
+	Private profile As notesDocument
+	
+	%REM
+		Sub New
+		Description: Comments for Sub
+	%END REM
+	Sub New()
+	'-------------------------------------------------------------------------------------
+		Set me.db = session.Currentdatabase
+		Set me.profile = db.getProfileDocument( "Setup" )
+		
+		Dim m as New Memo()
+		'Set m = GetMemo( db, "REPORT" )
+		If Not m.setTemplate( db, "REPORT" ) Then 
+			'no mail template? Create one...
+			dim template As NotesDocument
+			Set template = m.getDefaultTemplate()
+			template.form = "memo.template"
+			template.memoTemplate = "1"
+			template.id = "REPORT"
+			template.subject = "Report: Agent errors"
+			template.accessibility = "system"
+			template.contentType = "Text"
+			template.description = "Mail template for error reports"
+			template.docid = evaluate( |@unique| )
+			template.systemDocument = 1
+			template.mailType = "standard"
+			template.postmethod = "normal"
+			
+			Dim rt As NotesRichTextItem
+			Set rt = template.createRichTextItem( "bodySuffix" )
+			Call rt.appendText( "Legend/Help" & Chr( 10 )_
+& "Error types:" & Chr( 10 )_
+& "(1) Error found in the Agent Log database" & Chr( 10 )_ 
+& "(2) Error found in log.nsf (the standard Notes log on the server)" & Chr( 10 )_
+& "(3) Schedule error (agent didn't run as scheduled)" )
+			
+			Call template.replaceItemValue( "save", "no" )
+			
+			Call template.computeWithForm( False, False )
+			Call template.save( True, False )
+		End if
+	End Sub
+	
+	%REM
+		Function sendMails
+		Description: Comments for Function
+	%END REM
+	Function sendMails()
+		On Error GoTo eh
+		ForAll r In recipients
+			Call r.sendmail()
+		End ForAll
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function add
+		Description: Comments for Function
+	%END REM
+	Function add( doc As NotesDocument )
+	'-------------------------------------------------------------------------------------
+	%REM
+		Dim m As AbstractMemo
+		Dim body As NotesRichTextItem
+		
+		Dim sectionStyle As NotesRichTextStyle
+		Set sectionStyle = session.Createrichtextstyle()
+		sectionStyle.bold = True
+		%ENDREM
+		On Error GoTo eh
+		Dim mailSequence As Integer
+		mailSequence = doc.mailSequence( 0 )
+		
+		If doc.mailSequence( 0 ) = doc.sequence( 0 ) Then
+			'no new reports since last time. Delete the document
+			Call doc.remove( true )
+			GoTo done
+		End If
+		
+		Dim values As Variant
+		Dim s As String
+		Dim url As String
+		Dim link As Variant
+		
+		Dim n As NotesName
+		
+		ForAll recipient In doc.sendto
+			If recipient = "" Then GoTo nextrecipient
+			If InStr( recipient, "@" ) > 0 Then recipient = StrLeft( recipient, "@" )
+			Set n = New NotesName( LCase( recipient ))
+			
+			'redirect?
+			Dim reFrom As NotesName
+			Dim reTo As notesName
+			ForAll redirect In profile.redirect
+				If redirect <> "" Then
+					Set reFrom = New NotesName( LCase( StrLeft( redirect, "->" )))
+					If reFrom.Common = n.Common Then
+						Set n = New NotesName( LCase( StrRight( redirect, "->" )))
+					End If
+				End If
+			End ForAll
+			
+			If Not IsElement( recipients( n.Abbreviated )) Then
+				Set recipients( n.abbreviated ) = New Recipient( n.abbreviated )
+			End If
+			Call recipients( n.abbreviated ).add( doc )
+
+nextrecipient:
+		End ForAll
+			
+done:
+			
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function run
+		Description: Comments for Function
+	%END REM
+	Function run()
+	'-------------------------------------------------------------------------------------
+		Dim l As New AgentLog( db )
+		Call SystemLog.set( l )
+		
+		On Error GoTo eh
+		
+		'process all reports
+		Dim view As NotesView
+		Set view = db.getView( "lookupReportsById" )
+		view.Autoupdate = False
+		
+		Dim doc As NotesDocument
+		Dim nextdoc As NotesDocument
+		Set doc = view.Getfirstdocument()
+		Do Until doc Is Nothing
+			Set nextdoc = view.Getnextdocument( doc )
+			If doc.Isdeleted Then GoTo nextdoc
+			If Not doc.Isvalid Then GoTo nextdoc
+			
+			Call add( doc )
+			
+nextdoc:
+			Set doc = nextdoc
+		Loop
+		
+		view.Autoupdate = true
+		
+		%REM
+		'send the mails
+		Dim cnt As Long
+		ForAll m In mails
+			if m.send() Then 
+				cnt=cnt+1
+			Else
+				Call me.logAction(LOG_WARNING_HIGH, "Couldn't send mail to " & m.getDocument().sendto( 0 ), Nothing )
+			End if
+		End ForAll
+		Call me.logAction(LOG_NORMAL, parseParam( "%1 mails sent", cnt ), Nothing )
+		%ENDREM
+		
+		Call sendMails()
+		
+done:
+		Call l.close()
+		Exit Function
+eh:
+		Call l.logAction( LOG_FATAL, getErrorInfo( Me ), Nothing )
+		Resume done
+	End Function
+End Class
+%REM
+	Class Agent
+	Description: Comments for Class
+%END REM
+Class Agent As AbstractObject
+	public dbtitle As String
+	Private replicaId As String
+	public agentname As String
+	Public servers As Variant
+	
+	Public maxcount As long
+	public maxdate As Variant
+	
+	Public reports List As NotesDocument
+%REM
+	Sub New
+	Description: Comments for Sub
+%END REM
+Sub New( report As NotesDocument )	
+	ReDim servers( 0 )
+	servers( 0 ) = UCase( session.createName( report.server( 0 )).Abbreviated )
+	Call add( report )
+End Sub
+
+%REM
+	Function add
+	Description: Comments for Function
+%END REM
+Function add( report As NotesDocument )
+	If dbtitle = "" Then dbtitle = report.dbtitle( 0 )
+	If replicaid = "" Then replicaid = report.replicaid( 0 )
+	If agentname = "" Then agentname = report.agentname( 0 )
+	
+	If report.sequence( 0 ) > maxcount Then maxcount = report.sequence( 0 )
+	If report.Created < maxdate Then 
+		maxdate = report.Created
+	Else
+		maxdate = report.Created
+	End if
+	
+	Dim server As String
+	server = UCase( session.createName( report.server( 0 )).Abbreviated )
+	
+	If IsNull( ArrayGetIndex( servers, server )) Then
+		servers = ArrayAppend( servers, server )
+	End If  
+	
+	Set reports( report.Universalid ) = report	
+End Function
+
+End Class
+
+
+%REM
+	Class User
+	Description: Comments for Class
+%END REM
+Class Recipient As AbstractObject
+	Private recipient As String
+	Private agents List As Variant 'Private reports List As Variant
+	
+	%REM
+		Sub New
+		Description: Comments for Sub
+	%END REM
+	Sub New( recipient As String )
+		me.recipient = recipient
+	End Sub
+	
+	%REM
+		Function add
+		Description: Comments for Function
+	%END REM
+	Function add( report As NotesDocument )
+		On Error GoTo eh
+		Dim id As String
+		id = report.agentname( 0 ) & "#" & report.replicaid( 0 )
+		
+		Dim a As Agent
+		If IsElement( agents( id )) Then
+			call agents( id ).add( report )
+		Else
+			Set agents( id ) = New Agent( report )
+		End If
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function sendmail
+		Description: Comments for Function
+	%END REM
+	Function sendmail() As Boolean
+		On Error GoTo eh
+		Dim m As AbstractMemo
+		Dim body As NotesRichTextItem
+		
+		Dim sectionStyle As NotesRichTextStyle
+		Set sectionStyle = session.Createrichtextstyle()
+		sectionStyle.bold = True
+		sectionStyle.Notescolor = COLOR_BLUE
+		
+		Dim boldStyle As NotesRichTextStyle
+		Set boldStyle = session.Createrichtextstyle()
+		boldStyle.bold = True
+		
+		Dim normalStyle As NotesRichTextStyle
+		Set normalStyle = session.Createrichtextstyle()
+		normalStyle.bold = false
+		
+		'Dim grayStyle As NotesRichTextStyle
+		'Set grayStyle = session.Createrichtextstyle()
+		'grayStyle.Notescolor = COLOR_GRAY
+		
+		Dim mailSequence As Integer
+		Dim s As String
+		Dim values As Variant
+		
+		Set m = getMemo( session.currentDatabase, "REPORT" )
+		Call m.create( session.currentDatabase.createDocument, Nothing )
+		
+		'm.getDocument().sendto = "Jakob@majkilde.dk" 'recipient
+		m.getDocument().sendto = recipient
+		
+		Dim server As NotesName
+		Dim link As variant
+		Dim url As String
+		Set body = m.getDocument().Getfirstitem("body")
+		Dim v As Variant
+		ForAll a In agents
+			Call body.beginSection( |Agent "| & a.agentname & |" in "| & a.dbtitle &  |" failed on | & UBound( a.servers )+1 & | server(s)| & | - | & a.maxcount & " incident(s) since " & a.maxdate, sectionStyle )
+			ForAll doc In a.reports
+				mailSequence = doc.mailSequence( 0 )
+				
+				'server start
+				Set server = New NotesName( doc.server( 0 ))
+				Call body.Appendstyle(boldStyle)
+				Call body.appendText( UCase( server.abbreviated ))
+				Call body.Appendstyle(normalStyle)
+				Call body.Addnewline(1)
+				
+				If doc.filepath( 0 ) <> "" then
+					Call body.Appendtext(|Agent: | & doc.agentname( 0 ) & ||)
+					If doc.dbTitle( 0 ) <> "" Then Call body.Appendtext(" in " & doc.dbtitle( 0 ))
+
+					If doc.filepath( 0 ) <> "" Then		
+						url = "notes://" & server.Common & "/" & Replace( Replace( doc.filepath( 0 ), "\", "/" ), " ", "%20" )
+						Call body.Appendtext(", database link: " & url & Chr( 10 ))
+					End If
+				
+					'Call body.Appendtext( " (" & server.Common & "!!" & doc.filepath( 0 ) & ")")
+					Call body.addnewline( 1 )
+				End If
+				
+				'append error lines
+				ForAll entry In doc.log
+					'just add all the log lines
+					'If CInt( StrLeft( entry, "#" )) > mailSequence Then 'lower entries has been reported
+					values = Split( entry, "#" )
+						'0: sequence
+						'1: report type, 1=Agent error, 2=Log.nsf error, 3=Schedule error
+						'2: date 
+						'3: message
+						'4: Link (server!replicaid!documentUnid)
+						
+						'link = Split( values( 4 ), "!" )
+						'url = "notes://" & link( 0 ) & "/" & link( 1 ) & "/0/" & link( 2 ) & "?OpenDocument"
+						
+					If UBound( values ) >= 3 then
+						s = "(" & values( 1 ) & ") " & values( 3 ) '& " {" & values(2) & "}" '& url
+						'Call body.Addtab(1) 
+						Call body.Appendtext( s )
+						Call body.addNewline( 1 )
+					End if
+					'End If
+				End ForAll	
+				
+				Call body.addNewline( 1 )
+				
+				'update the sequence field
+				doc.mailSequence = doc.sequence
+				Call doc.save( True, False )
+		
+			End ForAll			
+			
+			Call body.Endsection()
+		End ForAll
+		
+		sendmail = m.send()
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+End Class

@@ -1,0 +1,64 @@
+<?xml version='1.0' encoding='utf-8'?>
+<note class='sharedfield' xmlns='http://www.lotus.com/dxl' version='9.0' maintenanceversion='1.0'
+ replicaid='C1257449003093D0'>
+<noteinfo noteid='802' unid='C1257449003093D0C12570990053F1AA' sequence='34'>
+<created><datetime dst='true'>20051013T171653,54+02</datetime></created>
+<modified><datetime>20120224T093451,26+01</datetime></modified>
+<revised><datetime>20120224T093451,25+01</datetime></revised>
+<lastaccessed><datetime>20120224T093451,25+01</datetime></lastaccessed>
+<addedtofile><datetime>20120224T093451,19+01</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Jakob Majkilde/OU=DK/OU=Visitor/O=PwC</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name
+>CN=SERVER/O=MAJKILDE</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name
+>CN=SERVER/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name
+>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name></wassignedby>
+<item name='OriginalModTime' sign='true'><datetime>20051124T213939,94+01</datetime></item>
+<item name='$HTMLCode' sign='true'>
+<rawitemdata type='1'>
+</rawitemdata></item>
+<item name='$TITLE'><text>dbConfig</text></item>
+<item name='$Info' sign='true'>
+<rawitemdata type='1'>
+hhgBAIAAAAAAgAAAAQABAP///wAQAAAA
+</rawitemdata></item>
+<item name='$Flags'><text/></item>
+<item name='$DesignerVersion' sign='true'><text>8</text></item>
+<item name='$Body' summary='true' sign='true'>
+<rawitemdata type='1'>
+gQKC/1oAAQAAAAAAAAAAAKAFAACgBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAABAAAAAJSHAAAAAAAAAAAAAAAAAQAAAAQAAACDBAEAhf8IAAEAAArdBgAAiv/+/1AA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAIr/hAWAAQEFBjACAAAAAAAAAgEAAApYBQAAAAAAAAgAAAAAAFgF
+CgAEAAcAHAAVACBDb3B5cmlnaHQgMjAwMy0yMDA3IAAHAAoAAwAJMVMABwAuACcAIE1BSktJTERF
+IEFwcyAtIFJldiA1LjEgLSBtYWpraWxkZS5jb20gAAcADAAFAAkwUjFTAAcARgBAACBOb3RlIHdo
+ZW4gdXNpbmc6IHJlbWVtYmVyIHRvIHJlcGxhY2UgW2xvY2FsXSB3aXRoIGEgYmxhbmsgKCIiKSAH
+AAwABgAJMFJSMVMHAAwABQBDb25zdAAHAAwABgAJMFJSMVMBACQACwBDT05GSUdfRklMRQABAAwA
+ZGJjb25maWcubnNmAwAHAA4ABwAJMFIxUzJTAAcAGgAUAEluaXRpYWxpemUgdmFyaWFibGVzBwAM
+AAYACTBSUjFTAQAiAAkAX2ZpbGVuYW1lAIsAAAAAAAAAAADwPxABawIDAAcAEgALAAkwUjFTMlM0
+UzhTAAEAOAATAGFwcGxpY2F0aW9uRmlsZW5hbWUABQAJAF9maWxlbmFtZQABAAEAXAABAAEALwCE
+AwMABwASAAsACTBSMVMyUzRTOVMAAQA4AA8AYXBwbGljYXRpb25QYXRoAAUAEwBhcHBsaWNhdGlv
+bkZpbGVuYW1lAAEAAQAvAKECAwAHABQADQAJMFIxUzJTNFM2UzdTAAEAKAARAGFwcGxpY2F0aW9u
+U2VydmVyAIsAAAAAAAAAAADwP2sCAwAHABIACwAJMFIxUzJTNFM3UwABACYACgBjb25maWdQYXRo
+BQAPAGFwcGxpY2F0aW9uUGF0aAADAAcAEAAJAAkwUlJSMVMyUwAIABQBAQAOAGNvbmZpZ0ZpbGVu
+YW1lBQAKAGNvbmZpZ1BhdGgBAAAACgKvAEYAFgAFAAsAQ09ORklHX0ZJTEUArgAwAAUACgBjb25m
+aWdQYXRoAQABAC8AIgIFAAsAQ09ORklHX0ZJTEUAIgKuAAQAtQPDAgUAEQBhcHBsaWNhdGlvblNl
+cnZlcgAFAA4AY29uZmlnRmlsZW5hbWUfAukBrwAyACYAAQAIAGNvbmZpZ0RiBQAOAGNvbmZpZ0Zp
+bGVuYW1lwwKuAAwAAQAAAK4ABAC1AwEACgBjb25maWdQYXRoBQAKAGNvbmZpZ1BhdGgBAAEALwCh
+AsMCBQAKAGNvbmZpZ1BhdGgBAAAACwL7BEcBAwAHAF4AWAAJMFIyUlQ0UzZTOFM5UzEwUzEyUzE0
+UzE1UzE2UzE3UzE4UzE5UzIyUlQyNFMyNlMyOVMzMVMzM1MzNlMzOVM0MVJUNDNTNDdTNDlTNTBT
+NTNSUlRTNTZSCACCAAUACABjb25maWdEYgEAAAALAq8AaAAKAAEAAACuAF4ABQARAGFwcGxpY2F0
+aW9uU2VydmVyAAUACwBDT05GSUdfRklMRQAfAukBrwAwACQAAQAIAGNvbmZpZ0RiBQALAENPTkZJ
+R19GSUxFAMMCrgAMAAEAAACuAAQAtQUDAAcAHgAXAAkwUjJTMTBTMTNTMTVTMTdTMjBTMjNTAAgA
+MgAFAAgAY29uZmlnRGIBAAAACgKvABgADAABAAAAwgGuAAwAAQAAAK4ABAC1AwMABwAMAAYACTBS
+UjJTBwAcABUATG9va3VwIGFsbCByZWZlcmVuY2VzAAcADgAHAAkwUlJSMVMAAABuAAUAEQBhcHBs
+aWNhdGlvblNlcnZlcgABAAAACgKvADwAEgABAAcAW2xvY2FsXQCuACoAAgAFAAAAAAAAAAUAEQBh
+cHBsaWNhdGlvblNlcnZlcgC0Aq4ABAC1AwUACABjb25maWdEYh8CAwAHAA4ACAAJMFIyUzE2U2Ri
+Q29uZmln3gYAAIr/hf8IAAEAAAo=
+</rawitemdata></item>
+<item name='$Comment'><text>Rev 6.6 | Design</text></item>
+<item name='$palmVersion'><datetime dst='true'>20110824T145127,00+02</datetime></item>
+<item name='$palmDate'><datetime>20120224T093403,00+01</datetime></item>
+<item name='$palmUser'><text>CN=Jakob Majkilde/OU=Majkilde/O=mths</text></item>
+<item name='$palmSource'><text>template=Design;title=Design 6.9 NTF;filename=templates\design.nsf;server=SERVER;</text></item></note>
+

@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='utf-8'?>
+<note class='form' xmlns='http://www.lotus.com/dxl' version='9.0' maintenanceversion='1.0'
+ replicaid='C1257449003093D0'>
+<noteinfo noteid='1ce' unid='0749997D25843A80C1256B260064B85D' sequence='81'>
+<created><datetime>20011218T192007,97+01</datetime></created>
+<modified><datetime>20130316T131742,36+01</datetime></modified>
+<revised><datetime>20130316T131455,86+01</datetime></revised>
+<lastaccessed><datetime>20130316T131742,35+01</datetime></lastaccessed>
+<addedtofile><datetime dst='true'>20080514T105043,66+02</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob majkilde/OU=IT/O=VKI</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=SERVER/O=MAJKILDE</name><name
+>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=SERVER/O=MAJKILDE</name><name
+>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/O=MAJKILDE</name></wassignedby>
+<item name='$TITLE'><text>$ACTIONS</text></item>
+<item name='$Info' sign='true'>
+<rawitemdata type='1'>
+hhgBAIAAAAAAgAAAAQABAP///wAAAAAA
+</rawitemdata></item>
+<item name='$Flags'><text>C34yQ</text></item>
+<item name='$V5ACTIONS' sign='true'>
+<rawitemdata type='1'>
+vRwPAAAAAQABAAAAAQAAABUAAAAAAAAACAACAHn/bAABAMDAwAABAAAAAAABAAAAAAABAMDAwAAA
+AB8AAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPz/OgAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAEAAAAAAAAAAAAAAAAAAAC+/2gAAAABAAAAGgABAAgAKgABAAAAIFNlYXJjaCAgAAAA
+EgACAJAXAAAAAAAA7QEDAAcADAAFAAkwUzBFACoAAAAcAAUACgBoaWRlU2VhcmNoAQABADEACgID
+AAcADAAFAAkwUzBFAF//EAACAAwABwAAAAAAAABf/xAAAgABAAcAAAAAAAAAX/8QAAIAAgAHAAAA
+AAAAAF//EAACAAsABwAAAAAAAABf/xAAAgAUAAcAAAAAAAAAX/8QAAIACQAHAAAAAAAAAF//EAAC
+AAgABwAAAAAAAABf/xAAAgAKAAcAAAAAAAAAX/8QAAIAAwAHAAAAAAAAAF//EAACAAYABwAAAAAA
+AABf/xAAAgAHAAcAAAAAAAAAX/8QAAIABQAHAAAAAAAAAF//EAACAAQABwAAAAAAAAC+/24AAAAB
+AAAAGgARAAQAKAACAAAASGVscCwAAAAgAAIAog8AAAAAAAABAAkAaGVscEFnZW50AO0CAwAHAAoA
+AwAJNVMAKAAAABoABQAIAGhpZGVIZWxwAQABADEACgIDAAcADAAFAAkwUzBFAPb/LgAAAAAAAwAT
+AAwAAAAAAAAAAAAAAAAAAAAAAAAAAABhY3Rpb25CdXR0b24=
+</rawitemdata></item>
+<item name='$ACTIONS' sign='true'>
+<rawitemdata type='1'>
+vRwPAAAAAQABAAAAAQAAABUAAAAAAAAACAACAL7/aAAAAAEAAAAaAAEACAAqAAEAAAAgU2VhcmNo
+ICAAAAASAAIAkBcAAAAAAADtAQMABwAMAAUACTBTMEUAKgAAABwABQAKAGhpZGVTZWFyY2gBAAEA
+MQAKAgMABwAMAAUACTBTMEUAvv9uAAAAAQAAABoAEQAEACgAAgAAAEhlbHAsAAAAIAACAKIPAAAA
+AAAAAQAJAGhlbHBBZ2VudADtAgMABwAKAAMACTVTACgAAAAaAAUACABoaWRlSGVscAEAAQAxAAoC
+AwAHAAwABQAJMFMwRQA=
+</rawitemdata></item>
+<item name='$DesignerVersion' sign='true'><text>6.5</text></item>
+<item name='$Comment'><text>Rev 6.5</text></item>
+<item name='$$ScriptName' summary='false' sign='true'><text>$ACTIONS</text></item>
+<item name='$Body' sign='true'>
+<rawitemdata type='1'>
+gQKC/1IAAQAAAAAAAAAAAKAFAACgBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAABAAAAAJQHAAAAAAAAAAAAAAAAgwQBAIX/CAABAAAK
+</rawitemdata></item></note>
+

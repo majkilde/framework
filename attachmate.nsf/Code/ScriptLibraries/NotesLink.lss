@@ -1,0 +1,220 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Public
+Option Declare
+Use "cls.system"
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class Link As AbstractObject
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+Class Link As AbstractObject
+'####################################################
+	Private doc As NotesDocument
+	Private links() As NotesRichTextDoclink
+	Private cnt As Integer
+	Private rti As Variant 'NotesRichTextItem
+	Private rtnav As NotesRichTextNavigator
+	
+	Private sourceDb As NotesDatabase
+	Private sourceView As NotesView
+	Private sourceDoc As NotesDocument
+	
+	Sub new( doc As NotesDocument )
+	'-------------------------------------------------------------------------------------	
+		Set Me.doc = doc
+		Redim links( 0 )
+	End Sub
+	
+	Function init( itemname As String ) As Boolean
+	'-------------------------------------------------------------------------------------	
+		init = False
+		
+		cnt = 0
+		Redim links( 0 )
+		
+		Dim rtlink As NotesRichTextDoclink
+		Set rti = doc.GetFirstItem( itemname )
+		If rti Is Nothing Then Exit Function
+		If rti.type <> 1 Then Exit Function
+		
+		Set rtnav = rti.CreateNavigator
+		
+		If Not rtnav.FindFirstElement(RTELEM_TYPE_DOCLINK) Then Exit Function
+		
+		Do
+			Set rtlink = rtnav.GetElement
+			
+			Redim Preserve links( cnt )
+			Set links( cnt ) = rtlink
+			cnt = cnt+1
+		Loop While rtnav.FindNextElement
+		
+		If cnt > 0 Then init = True
+	End Function
+	
+	Property Get count() As Integer
+	'-------------------------------------------------------------------------------------	
+		count = cnt		
+	End Property
+	
+	Function remove( idx As Integer )
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		Call links( idx-1 ).Remove
+		
+		Dim i As Integer
+		For i = idx-1 To cnt-2
+			Set links( i ) = links( i+1 )
+		Next
+		cnt = cnt-1
+		Redim Preserve links( cnt )
+	End Function
+	
+	Function replace( idx As Integer, link As Variant )
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		
+		Dim l As NotesRichTextDoclink
+		
+		With links( idx-1 )
+			
+			Select Case Typename( link )
+			Case "NOTESDATABASE"
+				.DBReplicaID = link.replicaId
+				.ServerHint = link.server
+				.ViewUnID = String$(32, "0") 
+				.DocUnID = String$(32, "0") 
+				
+			Case "NOTESDOCUMENT"
+				.DBReplicaID = link.ParentDatabase.ReplicaID
+				.ServerHint = link.ParentDatabase.Server
+				.ViewUnID = String$(32, "0") 
+				.DocUnID = link.UniversalID
+				
+			Case "NOTESVIEW"
+				Dim v As NotesView
+				.DBReplicaID = link.Parent.ReplicaID
+				.ServerHint = link.Parent.Server
+				.ViewUnID = String$(32, "0") 
+				.DocUnID = String$(32, "0") 
+				
+			End Select
+		End With
+	End Function
+	
+	Function getReplicaId( idx As Integer ) As String
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		
+		getReplicaId = links( idx-1 ).DBReplicaID		
+	End Function
+	
+	Function getServer( idx As Integer ) As String
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		
+		Dim n As New NotesName( links( idx-1 ).ServerHint )
+		getServer = n.Common
+	End Function
+	
+	Function getView( idx As Integer ) As String
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		
+		Dim unid As String
+		unid = links( idx-1 ).ViewUnID
+		If unid = String$(32, "0") Then
+			unid = ""
+		End If
+		getView = unid
+	End Function
+	
+	Function getDoc( idx As Integer ) As String
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		
+		Dim unid As String
+		unid = links( idx-1 ).DocUnID
+		If unid = String$(32, "0") Then
+			unid = ""
+		End If
+		getDoc = unid
+	End Function
+	
+	Function getType( idx As Integer ) As String
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		
+		If getDoc( idx ) <> "" Then
+			getType = "document"
+		Elseif getView( idx ) <> "" Then
+			getType = "view" 
+		Elseif getReplicaId( idx ) <> "" Then
+			getType = "database"
+		Else
+			getType = "none"
+		End If
+	End Function
+	
+	Function getNotesUrl( idx As Integer ) As String
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		
+		Select Case getType( idx )
+		Case "document"
+			If getView( idx ) = "" Then
+				getNotesUrl = "notes://" & getServer( idx ) & "/" & getReplicaId( idx ) & "/0/" & getDoc( idx )		
+			Else
+				getNotesUrl = "notes://" & getServer( idx ) & "/" & getReplicaId( idx ) & "/" & getView( idx ) & "/" & getDoc( idx )		
+			End If
+		Case "view"
+			getNotesUrl = "notes://" & getServer( idx ) & "/" & getReplicaId( idx ) & "/" & getView( idx )
+		Case "database"
+			getNotesUrl = "notes://" & getServer( idx ) & "/" & getReplicaId( idx ) 
+		Case Else
+			getNotesUrl = ""
+		End Select
+	End Function
+	
+	
+%REM
+Returns the link as a NotesDatabase, NotesView or NotesDOcument object
+%END REM
+	Function getLinkObject( idx As Integer ) As Variant
+	'-------------------------------------------------------------------------------------	
+		If idx <= 0 Or idx > cnt Then Exit Function
+		
+		Set getLinkObject = Nothing
+		
+		Set sourceDb = New NotesDatabase( "", "" )
+		Call sourceDb.OpenByReplicaID( getServer( idx ), getReplicaId( idx ))
+		If Not sourceDb.IsOpen Then Call Me.setMessage( "Can't open database" ) : Exit Function
+		
+		Select Case getType( idx )
+			
+		Case "database"
+			Set getLinkObject = sourceDb
+			
+		Case "view":
+			On Error Resume Next
+			Set sourceDoc = sourceDb.GetDocumentByUNID( getDoc( idx ))
+			On Error Goto 0 
+			If sourceDoc Is Nothing Then Call Me.setmessage( "View not found: " & Error ) : Exit Function
+			
+			Set sourceView = sourceDb.GetView( sourceDoc.GetItemValue( "$title" )( 0 ))
+			If sourceView Is Nothing Then Call Me.setMessage( "View not found: " & sourceDoc.GetItemValue( "$title" )( 0 )) : Exit Function
+			
+			Set getLinkObject = sourceView
+			
+		Case "document"
+			On Error Resume Next
+			Set sourceDoc = sourceDb.GetDocumentByUNID( getDoc( idx ))
+			On Error Goto 0 
+			If sourceDoc Is Nothing Then Call Me.setMessage( "Document not found: " & Error ) : Exit Function
+			
+			Set getLinkObject = sourceDoc
+			
+		End Select
+		
+	End Function
+End Class

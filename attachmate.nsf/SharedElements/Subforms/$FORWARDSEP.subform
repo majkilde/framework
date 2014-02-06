@@ -1,0 +1,58 @@
+<?xml version='1.0' encoding='utf-8'?>
+<note class='form' xmlns='http://www.lotus.com/dxl' version='9.0' maintenanceversion='1.0'
+ replicaid='C12579E700306BE2'>
+<noteinfo noteid='12ea' unid='C12579E700312485C12575C4006C4DE9' sequence='18'>
+<created><datetime dst='true'>20090528T214258,33+02</datetime></created>
+<modified><datetime>20130121T103819,57+01</datetime></modified>
+<revised><datetime>20130121T103752,42+01</datetime></revised>
+<lastaccessed><datetime>20130121T103819,57+01</datetime></lastaccessed>
+<addedtofile><datetime>20121206T213255,05+01</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Lotus Notes Template Development/O=Lotus Notes</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name
+>CN=Jakob Majkilde/O=MAJKILDE</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/O=MAJKILDE</name></wassignedby>
+<item name='$Language' sign='true'><text>en</text></item>
+<item name='$HTMLCode' sign='true'>
+<rawitemdata type='1'>
+X/8QAAIADwAHAAAAAAAAAA==
+</rawitemdata></item>
+<item name='$TITLE'><text>$FORWARDSEP</text></item>
+<item name='$Info' sign='true'>
+<rawitemdata type='1'>
+hhgBAIAAAAAAgAAAAQABAP///wAAAAAA
+</rawitemdata></item>
+<item name='$Flags'><text>CU3x</text></item>
+<item name='$DesignerVersion' sign='true'><text>8</text></item>
+<item name='ForwardedFrom' placeholder='true'>
+<rawitemdata type='0'>
+</rawitemdata></item>
+<item name='ForwardedDate' summary='false' sign='true'>
+<rawitemdata type='400'>
+AAAAAAAAAAA=
+</rawitemdata></item>
+<item name='$Fields'><textlist><text>ForwardedDate</text><text>ForwardedFrom</text></textlist></item>
+<item name='$Comment'><text>Rev 6.6 | Design</text></item>
+<item name='$palmVersion'><datetime>20120212T201605,00+01</datetime></item>
+<item name='$palmDate'><datetime>20121206T150659,00+01</datetime></item>
+<item name='$palmUser'><text>CN=Jakob Majkilde/O=MAJKILDE</text></item>
+<item name='$palmSource'><text>template=Design;title=Design 6.9.5 NTF;filename=c:\notes\data\templates\design.nsf;server=;</text></item>
+<item name='$$ScriptName' summary='false' sign='true'><text>$FORWARDSEP</text></item>
+<item name='$Body' sign='true'>
+<rawitemdata type='1'>
+gQKC/1oAAQAAAAAAAAAAAKAFAACgBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAABAAAAAJSHAAAAAAAAAAAAAAAAAQAAAAQAAACDBAEA3QYAAIX/hf8bAAEACwktLS0t
+LSBGb3J3YXJkZWQgYnkgANIIAQCAAIAA3gYAAIX/3QYAAIr//v9QAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AACK/6YAhAAABQAwAgAAAAAAAAIBAAsJdAAAAAAAAAANAAAAAAB0AAAAWAAFAA4ATmFtZVByZWZl
+cmVuY2UBAAEAMQAKAgUABwBBbHRGcm9tAAEAAAALAhwCrwAiABIABQAHAEFsdEZyb20ArgAQAAUA
+BABGcm9trgAEALUDAwAHABoAFAAJM1M0UzVTNlM3UzhTMTBSVDEyUkZvcndhcmRlZEZyb20A3gYA
+AIr/3QYAAIX/hf8MAAEACwkgb24g0ggBAIAAgADeBgAAhf/dBgAAiv/+/1QAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgAIAAQAAAAEBAgIBAQEBBwACAAAAAAAA
+AAAAAAAAACAvLzqK/zwAgAAABAAwAgAIAAABAAIBAAsJCgAAAAAAAAANAAAAAAAKAAAACAAsAAMA
+Rm9yd2FyZGVkRGF0ZQDeBgAAiv/dBgAAhf+F/w4AAQALCSAtLS0tLdIIAQCAAIAA3gYAAIX/gQKD
+BAEA3QYAAIX/hf8IAAEACwrSCAEAgACAAN4GAACF/w==
+</rawitemdata></item></note>
+

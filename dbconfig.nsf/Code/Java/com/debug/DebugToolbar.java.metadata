@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><note class="form" maintenanceversion="1.0" replicaid="C1257449003093D0" version="9.0" xmlns="http://www.lotus.com/dxl">
+<noteinfo noteid="83a" sequence="266" unid="C1257449003093D0C12579A3004BF154">
+<created><datetime>20120213T144929,80+01</datetime></created>
+<modified><datetime dst="true">20120604T172332,88+02</datetime></modified>
+<revised><datetime dst="true">20120604T172332,87+02</datetime></revised>
+<lastaccessed><datetime dst="true">20120604T172332,87+02</datetime></lastaccessed>
+<addedtofile><datetime dst="true">20120604T172319,74+02</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Keith Strickland/OU=NA/O=GBS</name><name>CN=Domino Administrator/O=LinQed</name><name>CN=Mark Leusink/O=CITC</name><name>CN=Mark Leusink/O=LinQed</name><name>CN=Mark Leusink/O=CITC</name><name>CN=Domino Administrator/O=LinQed</name><name>CN=Mark Leusink/O=LinQed</name><name>CN=Mark Leusink/O=CITC</name><name>CN=Mark Leusink/O=LinQed</name><name>CN=Mark Leusink/O=CITC</name><name>CN=Mark Leusink/O=LinQed</name><name>CN=Jakob Majkilde/O=MAJKILDE</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/O=MAJKILDE</name></wassignedby>
+<item name="$Flags"><text>34567Cg~[</text></item>
+<item name="$TITLE"><text>com/debug/DebugToolbar.java</text></item>
+
+
+
+
+<item name="$DesignerVersion"><text>8.5.3</text></item>
+
+
+<item name="$FileNames" sign="true"><text>com/debug/DebugToolbar.java</text></item>
+<item name="$palmVersion"><datetime dst="true">20120602T234236,00+02</datetime></item>
+<item name="$palmDate"><datetime dst="true">20120604T172302,00+02</datetime></item>
+<item name="$palmUser"><text>CN=Jakob Majkilde/O=MAJKILDE</text></item>
+<item name="$Comment"><text>XPage Debug Toolbar (v1.3.1 - recompiled for 852)</text></item>
+<item name="$palmSource"><text>title=XPage Debug Toolbar (v1.3.1 - recompiled for 852);filename=c:\notes\data\tools\debugToolbar.nsf;server=;title=XPage Debug Toolbar (v1.3.1 - recompiled for 852);filename=c:\notes\data\tools\debugToolbar.nsf;server=;</text></item>
+
+
+</note>

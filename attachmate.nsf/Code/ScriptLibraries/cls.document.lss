@@ -1,0 +1,737 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Public
+Option Declare
+%REM @!
+This work by MAJKILDE is licensed under a Creative Commons Attribution 3.0 Unported License.
+ -> http://creativecommons.org/licenses/by/3.0/
+%END REM
+%REM @disclaimer
+<a rel="license" href="http://creativecommons.org/licenses/by/3.0/"><img alt="Creative Commons License" style="border-width:0" src="http://i.creativecommons.org/l/by/3.0/88x31.png" /></a>&nbsp;This work by <a xmlns:cc="http://creativecommons.org/ns#" href="majkilde.dk" property="cc:attributionName" rel="cc:attributionURL">MAJKILDE</a> is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/3.0/">Creative Commons Attribution 3.0 Unported License</a>.
+%ENDREM
+
+
+Use "cls.system"
+
+%REM @revisions
+	Rev 6.13 Stig Johannes Salomonsen 1.02.2013
+	- AbstractDocument.AppendItem optimizations
+	Rev 6.9 masjkilde 6.9.2012
+	- GetMainDocument now handles pigears and orphans
+	Rev 6.8 majkilde 18.01.2012
+	- Added: getOriginalValue( itemname as string ) as variant
+	Rev 6.7 majkilde 2-9-2011
+	- AbstractDocument.getParentDocument now looks for a parentUnid field if $ref fails (e.g. new documents)
+	Rev 6.6.3 majkilde 23-5-2011
+	- Fix an error in the appendItem method
+	Rev 6.6.2 majkilde 6-5-2011
+	- CopyItem pudated to support RichText items
+	Rev 6.6.1 majkilde 12-4-2011
+	- Class AbstractUIDocument added
+	Rev 6.5.3 majkilde 5.02.2011
+	- New method: copyItem
+Rev 6.5.2 GetModifiedItems property added
+Rev 6.5.1 Errorhandlers added
+Rev 5.8.1 Fixed a small problem in the RemoveResponses method (failed if there where no responses)
+Rev 5.8 Fixed an error in the GetMainDocument method
+Rev 5.1 Added type control to update responses
+Rev 4.0 019 Fixed another problem with UpdateResponses (when inheriting the class)
+Rev 4.0 018 Fixed problem with UpdateResponses
+Rev 4.0 017 Fixed problem with SetParentDocument
+%END REM
+
+
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class AbstractDocument As AbstractObject
+Declare Class AbstractUIDocument As AbstractDocument
+Declare Public Function cDoc( doc As NotesDocument ) As AbstractDocument
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+
+Class AbstractDocument As AbstractObject
+'#######################################################################################################################
+	Private db As NotesDatabase
+	Private doc As NotesDocument
+	Private isDirtyPrivate As Boolean 'true if document is modified (with the setItem method)
+	
+	Private modifiedItems As Array
+	Private originalValues List As Variant 'stores alle the original values as before they ware changed by the SetItem method
+	
+%REM
+	doc - the NotesDocument to work on
+%END REM	
+	Sub new( doc As NotesDocument )
+		Call setDocument( doc )	
+	End Sub
+	
+	Public Property Get isDirty() As Boolean
+		isDirty = isDirtyPrivate
+	End Property
+	
+	Public Property Set isDirty() As Boolean
+		isDirtyPrivate = isDirty
+		
+		If Not isDirtyPrivate Then
+			'reset history
+			Set modifiedItems = New Array( Null )
+			Erase originalValues
+		End If
+	End Property
+	
+	Public Function setDocument( doc As NotesDocument )
+		On Error GoTo eh
+		isDirty = False
+		Set Me.doc = doc
+		If Not doc Is Nothing Then
+			Set Me.db = doc.ParentDatabase
+		Else
+			Set Me.db = session.CurrentDatabase
+		End If
+		
+		Set modifiedItems = New Array( Null )
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	Public Function getDocument() As NotesDocument 
+		Set getDocument = doc
+	End Function
+	
+%REM
+Returns true if the document is saved. 
+%END REM
+	Public Function save( ) As Boolean
+		On Error GoTo eh
+		If doc.Save( True, False ) Then
+			isDirty = False
+			save = True
+		Else
+			save = False
+		End If
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+%REM
+Returns true on normal valid documents
+Return false on conlicts or deleted documents
+%END REM
+	Public Function isValid() As Boolean
+	'---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+		isValid = True
+		If doc Is Nothing Then
+			isValid = False
+		Else
+			If doc.IsDeleted Then
+				isValid = False
+				Call setMessage( "Document is deleted" )
+			Else
+				If Not doc.IsValid Then
+					isValid = False
+					Call setMessage( "Document is invalid" )
+				Else
+					If doc.HasItem( "$Conflict" ) Then
+						isValid = False
+						Call setMessage( "Document is a replication conflict" )
+					Else
+						If doc.UniversalID = "" Then
+							isValid = False
+							Call setMessage( "Document unid is missing" )
+						End If
+					End If
+				End If
+			End If
+		End If
+	End Function
+	
+%REM
+Updates related documents. Returns the number of updated documents
+%END REM
+	Public Function updateRelated( ) As Long
+		
+	End Function
+	
+%REM
+Updates documents from top to bottom - pushing data
+Set recursive = true to update all documents in hierachy
+
+Note: we recommend to use the inherit method from the child object instead
+
+items: array or string with values seperated by comma, e.g. "subject,readers"
+%END REM
+	
+	Public Function updateResponses( items As Variant, recursive As Boolean )
+		 
+		Dim coll As NotesDocumentCollection
+		Dim resp As NotesDocument
+		Dim docObject As AbstractDocument
+		
+		Dim sItem As NotesItem  'source item 
+		Dim dItem As NotesItem 'destination item 
+		
+		On Error GoTo eh
+		
+		If Not IsArray( items ) Then
+			items = Split( items, "," )
+		End If
+		
+		Set coll = doc.Responses
+		If Not coll Is Nothing Then
+			Set resp = coll.GetFirstDocument
+			Do Until resp Is Nothing
+				If resp.Isdeleted Then GoTo nextdoc
+				If Not resp.Isvalid Then GoTo nextdoc
+				If resp.Hasitem("$conflict") Then GoTo nextdoc
+				
+				Set docObject = getObject( resp )
+				
+				If docObject.isValid() Then
+					Forall item In items
+						Call docObject.setItem( Cstr( item ), getItemValue( Cstr( item ))) 
+						Set sItem = doc.GetFirstItem( item ) 
+						Set dItem = resp.GetFirstItem( item ) 
+						If Not sItem Is Nothing And Not dItem Is Nothing Then 'update flags 
+							If sItem.IsReaders <> dItem.IsReaders Then dItem.IsReaders = sItem.IsReaders : isDirty = True 
+							If sItem.IsAuthors <> dItem.IsAuthors Then dItem.IsAuthors = sItem.IsAuthors : isDirty = True 
+							If sItem.IsEncrypted <> dItem.IsEncrypted Then dItem.IsEncrypted = sItem.IsEncrypted : isDirty = True 
+							If sItem.IsNames <> dItem.IsNames Then dItem.IsNames = sItem.IsNames : isDirty = True 
+							If sItem.IsProtected <> dItem.IsProtected Then dItem.IsProtected = sItem.IsProtected : isDirty = True 
+							If sItem.IsSigned <> dItem.IsSigned Then dItem.IsSigned = sItem.IsSigned : isDirty = True 
+							If sItem.IsSummary <> dItem.IsSummary Then dItem.IsSummary = sItem.IsSummary : isDirty = True 
+						End If 
+					End Forall
+					
+					If docObject.isDirty() Then
+						Call docObject.save()					
+						If recursive Then
+							Call docObject.updateResponses( items, recursive )
+						End If
+						
+					End If
+				End If
+				
+nextdoc:
+				Set resp = coll.GetNextDocument( resp )
+			Loop
+		End If
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM 
+        Function copyItem 
+        Copy an item from the sourcedocument, including all item properties (e.g. isReaders). Support RichText fields 
+        Like replaceItemValue, but with support for RichText and item properties: call doc.replaceItemValue( itemname, sourceDoc.getItemValue( itemname )) 
+        Returns true is values are updated 
+	%END REM 
+	Public Function copyItem( itemname As String, sourceDoc As NotesDocument ) As Boolean 
+		On Error GoTo eh 
+		'first, compare the two items 
+		Dim item1 As NotesItem 
+		Dim item2 As NotesItem 
+		
+		copyItem = False 
+		
+		Set item1 = doc.Getfirstitem(Itemname) 
+		Set item2 = sourceDoc.Getfirstitem(Itemname) 
+		
+		If item1 Is Nothing And item2 Is Nothing Then GoTo done 'no items to copy/delete 
+		If item1 Is Nothing Then GoTo update 'new field 
+		If item2 Is Nothing Then GoTo update 'delete field 
+		
+		'compare values 
+		If item1.type <> item2.type Then GoTo update 'different types 
+		
+		If item2.type = RICHTEXT Then 
+			If item2.Lastmodified > item2.Lastmodified Then GoTo update 'field is modified 
+		Else 
+			If item1.Valuelength <> item2.Valuelength Then GoTo update 'different sizes 
+		End If 
+		If item1.text <> item2.text Then GoTo update 'diffent content 
+		'compare properties 
+		If item1.Isauthors <> item2.Isauthors Then GoTo update 
+		If item1.isReaders <> item2.Isreaders Then GoTo update 
+		If item1.Isnames <> item2.Isnames Then GoTo update 
+		If item1.Isencrypted <> item2.Isencrypted Then GoTo update 
+		If item1.Isprotected <> item2.Isprotected Then GoTo update 
+		
+		
+		GoTo done 
+		
+update: 
+		copyItem = True 
+		
+		'items are different - please update 
+		Call doc.Removeitem(Itemname) 'delete old item 
+		If Not item2 Is Nothing Then 
+			If item2.type = RICHTEXT Then 
+				Dim rtItem1 As NotesRichTextItem 
+				Dim rtItem2 As NotesRichTextItem 
+				Set rtItem2 = sourceDoc.Getfirstitem(Itemname) 
+				
+				Set rtItem1 = doc.Createrichtextitem(Itemname) 
+				Call rtItem1.Appendrtitem(rtItem2) 
+				
+				rtitem1.Isauthors = rtitem2.Isauthors 
+				rtitem1.isReaders = rtitem2.Isreaders 
+				rtitem1.Isnames = rtitem2.Isnames 
+				rtitem1.Isencrypted = rtitem2.Isencrypted 
+				rtitem1.Isprotected = rtitem2.Isprotected 
+				
+			Else 
+				Call doc.Copyitem(item2, Itemname) 'copy the new 
+			End If 
+		End If 
+		
+		Call modifiedItems.add(itemname) 
+		isDirty = True 
+		
+done: 
+		Exit Function 
+eh: 
+		Error Err, getErrorInfo( Me ) 
+	End Function 
+
+	
+%REM
+Updates an item on the document. Returns true is the data is actual modified
+%END REM
+	Public Function setItem( itemname As String, value As Variant ) As Boolean
+		On Error GoTo eh
+		If cString( doc.GetItemValue( itemname )) <> cString( value ) Then
+			originalValues( LCase( itemname )) = doc.Getitemvalue( itemname )
+			
+			Call doc.ReplaceItemValue( itemname, value )
+			setItem = True
+			isDirty = True
+			If Not modifiedItems.hasElement(itemname) Then
+				Call modifiedItems.add(itemname)
+			End If
+		Else
+			setItem = False
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+%REM
+Returns the item
+%END REM
+	Public Function getItem( itemname As String ) As Variant
+		On Error GoTo eh
+		Set getItem = doc.GetFirstItem( itemname )
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+%REM
+Returns the item value
+%END REM
+	Public Function getItemValue( itemname As String ) As Variant
+		On Error GoTo eh
+		getItemValue = doc.GetItemValue( itemname )
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	
+%REM
+Add a new value to a multivalue item
+Options: (can be joined)
+1 - Unique
+2 - Sort
+4 - Trim
+
+%END REM
+	Public Function appendItem( itemname As String, value As Variant, options As Integer ) 
+		On Error GoTo eh
+		Dim a As Variant
+		a = getItemValue( itemname)
+
+		If ( options And &b00000001 ) = &b00000001 Then
+			a = ArrayUnique( ArrayAppend( a, value ))
+		Else
+			a = ArrayAppend( a, value )
+		End If
+		
+		If ( options And &b00000100 ) = &b00000100 Then
+			a = FullTrim( a )	
+		End If
+		
+		If ( options And &b00000010 ) = &b00000010 Then
+			Dim ar As New Array(a)
+			Call ar.QuickSort(a)
+		End If
+		
+		Call setItem( itemname, a )
+		
+		Call modifiedItems.add(itemname)
+		isDirty = true
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	
+%REM
+Inherits data from parent document - Override this function.
+Returns true if data has been changed (new values is inherited)
+
+%END REM
+	Public Function inherit( ) 
+		
+	End Function
+	
+%REM
+Recalculates all computed / hidden fields
+%END REM
+	Public Function recalc() As Boolean
+
+'		Call setItem( "viewIcon", 1 )
+'		Call setItem( "viewDescription", "" )
+'		Call setItem( "viewCategory", "" )
+	End Function
+	
+%REM
+Sets a parent document
+%END REM
+	Public Function setParentDocument( parent As NotesDocument ) 
+	On Error GoTo eh
+		If parent Is Nothing Then
+			Call doc.RemoveItem( "$ref" )			
+		Else
+			Call doc.MakeResponse( parent )
+		End If
+		
+		isDirty = True
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	Public Function getObject( doc As NotesDocument ) As AbstractDocument
+		On Error GoTo eh
+		Set getObject = New AbstractDocument( doc )
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function getOriginalValue
+		Description: Comments for Function
+	%END REM
+	Function getOriginalValue( itemname As String ) As Variant
+		On Error GoTo eh
+		If IsElement( originalValues( LCase( itemname ))) Then
+			getOriginalValue = originalValues( LCase( itemname ))
+		Else
+			getOriginalValue = ""
+		End If
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function getModifiedItems
+		Description: Comments for Function
+	%END REM
+	Public Function getModifiedItems() As Variant
+		getModifiedItems = modifiedItems.sort()
+	End Function
+	
+	%REM
+		Function pigear
+		Handle a pigear document (selfreferencing response)
+	%END REM
+	Private Function handlePigear( pigearDoc As NotesDocument )
+		Call me.logAction(LOG_WARNING_HIGH, "Self-referencing document found (pigear)", pigearDoc)
+	End Function
+	
+	%REM
+		Function handleOrhan
+		Description: Comments for Function
+	%END REM
+	Private Function handleOrphan( orphanDoc As NotesDocument )
+		Call me.logAction(LOG_WARNING_HIGH, "Orphan document found", orphanDoc)
+	End Function
+	
+	%REM
+		Function getParent
+		Description: Comments for Function
+	%END REM
+	Private Function getParent( currentDoc As NotesDocument ) As NotesDocument
+		On Error GoTo eh
+		Dim parent As NotesDocument
+		
+		If Not currentDoc.Isresponse Then 
+			Exit function
+		End If
+		
+		On Error Resume Next
+		Set parent = db.GetDocumentByUNID( currentDoc.ParentDocumentUNID )
+		If parent Is Nothing Then 
+			Set parent = db.GetDocumentByUNID( currentDoc.parentUNID( 0 ))
+		End If
+		On Error GoTo eh
+		
+		If Not parent Is Nothing Then
+			If parent.Isdeleted Then
+				Set parent = Nothing
+			ElseIf Not parent.Isvalid Then 
+				Set parent = Nothing
+			End If
+		End If
+		
+		If parent Is Nothing Then
+			Call handleOrphan( currentDoc )
+		Else
+			If parent.Universalid = currentDoc.Universalid Then
+				Call handlePigear( currentDoc )
+			End If
+		End If
+		
+		Set getParent = parent
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+		
+	End Function
+	
+%REM
+Returns the current parent document, using the $ref
+On new documents, the $ref doesn't have a value yet. 
+Instead you can create a ParentUnid field on the document with this formula: @Text(@InheritedDocumentUniqueID)
+(Form must inherit values)
+%END REM
+	Public Function getParentDocument() As NotesDocument
+		On Error GoTo eh
+		
+		Set getParentDocument = getParent( doc )
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	
+	
+%REM
+Returns the topmost document in the hierachy
+%END REM
+	Public Function getMainDocument() As NotesDocument
+		On Error GoTo eh
+		
+		Dim parentlist List As Boolean
+
+		Dim parent As NotesDocument
+		Set parent = doc
+		Dim cnt As Integer
+
+		Do While parent.Isresponse
+			If IsElement( parentlist( parent.Universalid )) Then
+
+				'pigear found
+				Call handlePigear( parent )
+				Set getMainDocument = parent
+				Exit Function
+			End If
+			
+			parentlist( parent.Universalid ) = True
+			Set parent = getParent( parent )
+			If parent Is Nothing Then Exit Do
+			
+			cnt = cnt+1
+			If cnt > 15 Then Exit Do 'don't go into an indefinite loop
+		Loop
+		
+		Set getMainDocument = parent
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+
+	
+%REM
+Deletes the document 
+%END REM
+	Public Function remove()
+		On Error GoTo eh
+		Call removeResponses()
+		Call doc.Remove( True )
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	
+%REM
+Deletes all responses
+%END REM
+	Public Function removeResponses()
+	On Error GoTo eh
+		Dim coll As NotesDocumentCollection
+		Dim resp As NotesDocument
+		Dim nextDoc As NotesDocument
+		
+		Set coll = doc.Responses
+		If coll Is Nothing Then Exit function
+		Set resp = coll.GetFirstDocument
+		Do Until resp Is Nothing
+			Set nextDoc = coll.GetNextDocument( resp )
+			
+			Call cDoc( resp ).remove() 'recursive
+			
+			Set resp = nextDoc
+		Loop
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+End Class
+%REM
+	Class AbstractUIDocument
+	Implements all the UI event handlers
+	Global Options
+		Use "cls.document"
+	Global Declarations
+		dim d as AbstractUIDocument
+	Initalize from QueryOpen:
+		set d = new AbstractUIDocumnt( nothing ) 'use nothing as we don't have a NotesDocument yet (this will be set in the PostOpen event)
+		Call d.QueryOpen( source, mode, isnewdoc, continue ) 'Required: this will load all the event handlers
+%END REM
+Class AbstractUIDocument As AbstractDocument
+	Private ws As NotesUIWorkspace
+	Private uidoc As NotesUIDocument
+	Private isSaved As Boolean 
+	Private isNew As Boolean 
+	
+	Sub New( doc As NotesDocument )
+		
+	End Sub
+	
+	Sub Queryopen(Source As NotesUIDocument, Mode As Integer, Isnewdoc As Variant, Continue As Variant)
+		Set ws = New NotesUIWorkspace
+		
+		'init 
+		Set me.uidoc = source 
+		isNew = source.Document Is Nothing 
+		If Not isNew Then
+			Call setDocument( source.Document )
+		End If
+		isSaved = False 
+		
+		'load events
+		On Event Postopen From uidoc Call Postopen
+		On Event Querymodechange From uidoc Call Querymodechange
+		On Event Postmodechange From uidoc Call Postmodechange
+		On Event Postsend From uidoc Call Postsend
+		On Event Querysend From uidoc Call Querysend
+		On Event Postsave From uidoc Call Postsave
+		On Event Querysave From uidoc Call Querysave
+		On Event Postrecalc From uidoc Call Postrecalc
+		On Event Queryrecalc From uidoc Call Queryrecalc
+		On Event Queryclose From uidoc Call Queryclose
+		
+		'append your QueryOpen code here... 
+	End Sub
+	
+	Sub Postopen(Source As NotesUIDocument)
+		Set me.uiDoc = source
+		Call setDocument( source.Document )
+	End Sub
+	
+	Sub Querymodechange(Source As NotesUIDocument, Continue As Variant)
+		
+	End Sub
+	
+	Sub Postmodechange(Source As NotesUIDocument)
+		
+	End Sub
+	
+	Sub Postsend(Source As NotesUIDocument)
+		
+	End Sub
+	
+	Sub Querysend(Source As NotesUIDocument, Continue As Variant)
+		
+	End Sub
+	
+	Sub Postsave(Source As NotesUIDocument)
+		isNew = False 
+		isSaved = True 
+	End Sub
+	
+	Sub Querysave(Source As NotesUIDocument, Continue As Variant)
+		
+	End Sub
+	
+	Sub Postrecalc(Source As NotesUIDocument)
+		
+	End Sub
+	
+	Sub Queryrecalc(Source As NotesUIDocument, Continue As Variant)
+		
+	End Sub
+	
+	Sub Queryclose(Source As NotesUIDocument, Continue As Variant)
+		
+	End Sub
+End Class
+'++LotusScript Development Environment:2:1:cDoc:1:8
+Public Function cDoc( doc As NotesDocument ) As AbstractDocument
+'---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+	Set cDoc = New AbstractDocument( doc )
+End Function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

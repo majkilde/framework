@@ -1,0 +1,293 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Public
+Option Declare
+Use "cls.system"
+Use "cls.fw"
+
+
+%REM @revisions
+	rev 6.5.1
+	- uppercase all id's
+	rev 1.2
+	- Language can now be set in the notes.ini param: userLanguage
+	- Lookup in both dbConfig and the local database (support for mth sys.lookup view)
+	rev 1.1
+	- Language documents are now created as PublicAccess
+%END REM
+
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class LanguageDocument As AbstractObject
+Declare Class LanguageHandler As AbstractObject
+Declare Static Public Function language() As LanguageHandler
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+Private Const DEFAULT_LANGUAGE = "en"
+
+Class LanguageDocument As AbstractObject
+'###########################################################################################
+	Private doc As NotesDocument
+	Private data List As String
+	Private isDirty As Boolean
+	Private item As NotesItem
+	
+	Sub new( doc As NotesDocument )
+		Set Me.doc = doc	
+		
+		Dim id As String
+		Dim txt As String
+		Forall entry In doc.values
+			id = Ucase( Fulltrim( Strleft( entry, ":=")))
+			txt = Strright( entry, ":=" )
+			If id <> "" Then
+				data( id ) = txt
+			End If
+		End Forall
+		
+		isDirty = False
+	End Sub
+	
+	%REM
+		Function isValid
+		Description: Comments for Function
+	%END REM
+	Function isValid() As Boolean
+		isValid = False
+		
+		If doc Is Nothing Then Exit Function
+		If doc.Isdeleted Then Exit Function
+		If Not doc.Isvalid Then Exit Function
+		
+		isValid = true
+		
+	End Function
+	
+	Function document As NotesDocument
+		Set document = doc		
+	End Function
+	
+	Function getText( id As String ) As String
+		On Error GoTo eh
+		id = Ucase( id )
+		If Iselement( data(  id )) Then
+			getText = data( id )
+		Else
+			getText = ""
+		End If
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+%REM
+True if a new text is created - false the the text were there allready. 
+Class will autosave any changes when terminated
+%END REM
+	Function addText( entry As String ) As Boolean
+		On Error GoTo eh
+		Dim id As String
+		Dim txt As String
+		id = Ucase( Fulltrim( Strleft( entry, ":=")))
+		txt = Strright( entry, ":=" )
+		
+		If Not Iselement( data( id )) Then
+			data( id ) = txt
+			
+			If item Is Nothing Then Set item = doc.GetFirstItem( "values" )
+			If item Is Nothing Then 
+				Set item = doc.Replaceitemvalue("values", id & ":=" & txt)
+			else
+				Call item.AppendToTextList( id & ":=" & txt )
+			End If
+			
+			addText = True
+			isDirty = True
+		End If
+done:
+		Exit function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	Sub delete()
+		On Error Resume next
+		If isDirty Then
+			Call doc.Save( True, False )
+		End If
+	End Sub
+End Class
+
+Class LanguageHandler As AbstractObject
+'###########################################################################################
+	Private config As DbConfig
+	Private configDb As NotesDatabase
+	'Private configView As NotesView
+	
+	Private language As String
+	
+	Private cache List As LanguageDocument
+	
+	Sub new(  )
+		'get the users language
+		Dim v As Variant
+		v = Evaluate( |@LanguagePreference ( [content] )| )
+		
+		If session.Getenvironmentstring("userLanguage" ) = "" then
+			language = Ucase( v( 0 ))
+		Else
+			language = UCase( session.Getenvironmentstring("userLanguage" ))
+		End if
+		If language = "" Then language = UCase( DEFAULT_LANGUAGE )
+		
+		'get the dbconfig database
+		Set config = New DbConfig()
+		Set configDb = config.getConfigDatabase()
+	'	Set configView = configDb.GetView( "admin.lookup" )
+	End Sub
+	
+	%REM
+		Function setLanguage
+		Description: Comments for Function
+	%END REM
+	Function setLanguage( language As String )
+		me.language = language
+	End Function
+	
+	Function getLanguage() As String
+		getLanguage = language		
+	End Function
+	
+	Function hasLanguageDoc( module As String, lan As String ) As Boolean
+		hasLanguageDoc = Not ( getLanguageDoc( module, lan ) Is Nothing )
+	End Function
+	
+	Function getLanguageDoc( module As String, lan As String ) As LanguageDocument
+		On Error GoTo eh
+		Dim doc As NotesDocument
+		module = Ucase( module )
+		Dim key As String
+		key = "LANGUAGE." & module & "." & Ucase( lan )
+		
+		If Iselement( cache( key )) Then
+			Set getLanguageDoc = cache( key )
+			If Not getLanguageDoc.isValid() Then GoTo recache 'document has been deleted (probably by a developer while testning)
+		Else
+recache:
+			Set doc = CacheManager.getDocument("*", "admin.lookup", Key)
+			If doc Is Nothing Then Set doc = CacheManager.getDocument("*", "sys.lookup", "KEYWORD." & Key)
+			If doc Is Nothing Then Set doc = CacheManager.getDocument(configDb, "admin.lookup", Key)
+			
+			'Set doc = configView.GetDocumentByKey( "LANGUAGE." & key, True )
+			If Not doc Is Nothing Then
+				Set cache( key ) = New LanguageDocument( doc )
+				Set getLanguageDoc = cache( key )
+			End If
+		End If
+done:		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+%REM
+creates a new or updates a existing
+data: array with languages text (id:=text). Optional a string ( id1:=text1~id2:=text2~...)
+%END REM
+	Function createLanguageDoc( module As String, lan As String, data As Variant ) As LanguageDocument
+		On Error GoTo eh
+		Dim doc As NotesDocument
+		Dim landoc As LanguageDocument
+		Set landoc = getLanguageDoc( module, lan )
+		
+		Dim mydata As Variant
+		If Islist( data ) Then
+			Redim mydata( 0 )
+			Dim i As Integer
+			
+			Forall entry In data
+				Redim Preserve mydata( i )
+				mydata( i ) = UCase( Listtag( entry )) & ":=" & entry
+				i = i+1
+			End Forall
+		Elseif Not Isarray( data ) Then
+			mydata = Split( data, "~" )
+		Else
+			mydata = data
+		End If
+		
+		If landoc Is Nothing Then 'create
+create:
+			Set doc = configDb.CreateDocument()
+			doc.form = "admin.keyword"
+			Call doc.ReplaceItemValue( "key", "LANGUAGE." & Ucase( module ) & "." & Ucase( lan ))
+			Call doc.ReplaceItemValue( "values", mydata )
+			Call doc.Replaceitemvalue( "$PublicAccess", "1" )
+			Call doc.Replaceitemvalue( "$ConflictAction", "3" )
+			Dim item As NotesItem
+			Set item = doc.Replaceitemvalue( "Author", session.username)
+			item.Isauthors = true
+			
+			Call doc.ComputeWithForm( True, False )
+			Call doc.Save( True, False )
+			
+			Dim configview As NotesView
+			Set configview = CacheManager.getView(configDb, "admin.lookup")
+			Call configview.Refresh()
+			
+			Set landoc = New LanguageDocument( doc )
+		Else 'update
+			If Not landoc.isValid() Then GoTo create 'quick'n dirty fix to handle deleted documents (probably done by a developer while testing)
+			Forall entry In mydata
+				Call landoc.addText( Cstr( entry ))
+			End Forall
+			
+		End If
+		
+		Set createLanguageDoc = landoc
+done:		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+		
+	End Function
+	
+	Function getText( module As String, id As String ) As String
+		On Error GoTo eh
+		id = UCase( id )
+		Dim landoc As LanguageDocument
+		Set landoc = getLanguageDoc( module, language )
+		
+		If landoc Is Nothing Then Set landoc = getLanguageDoc( module, DEFAULT_LANGUAGE )
+		If landoc Is Nothing Then
+			getText = ""
+		Else
+			getText = landoc.getText( id )
+		End If
+done:		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+		
+	End Function
+	
+	
+End Class
+'++LotusScript Development Environment:2:1:language:1:8
+Static Public Function language() As LanguageHandler
+	Static l As LanguageHandler
+	If l Is Nothing Then
+		Set l = New LanguageHandler()
+	End If
+	Set language = l
+End Function
+
+
+
+
+
+
+
+
+
+

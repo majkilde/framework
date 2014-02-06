@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?><note class="form" maintenanceversion="1.0" replicaid="C12579E700306BE2" version="9.0" xmlns="http://www.lotus.com/dxl">
+<noteinfo noteid="12ee" sequence="6" unid="C12579E700312485C12576FF003289D7">
+<created><datetime dst="true">20100408T111200,87+02</datetime></created>
+<modified><datetime>20121206T213255,07+01</datetime></modified>
+<revised><datetime>20121206T150659,66+01</datetime></revised>
+<lastaccessed><datetime>20121206T213255,07+01</datetime></lastaccessed>
+<addedtofile><datetime>20121206T213255,07+01</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=Jakob Majkilde/O=MAJKILDE</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/O=MAJKILDE</name></wassignedby>
+<item name="$FlagsExt"><text>D</text></item>
+<item name="$ImagesWide" sign="true"><number>1</number></item>
+<item name="$ImagesHigh" sign="true"><number>1</number></item>
+<item name="$ImagesColorize" sign="true"><number>0</number></item>
+
+
+<item name="$MimeType" sign="true"><text>image/gif</text></item>
+<item name="$FileModDT" sign="true"><datetime dst="true">20100408T110937,00+02</datetime></item>
+<item name="$ImageNames" sign="true"><text>question.gif</text></item>
+<item name="$TITLE" sign="true"><textlist><text>ts.question.gif</text><text>question</text></textlist></item>
+<item name="$DesignerVersion"><text>8.5</text></item>
+<item name="$Flags"><text>34CiQ</text></item>
+<item name="$Comment"><text>Rev 6.6 | Design</text></item>
+<item name="$palmVersion"><datetime dst="true">20110429T235739,00+02</datetime></item>
+<item name="$palmDate"><datetime>20121206T150659,00+01</datetime></item>
+<item name="$palmUser"><text>CN=Jakob Majkilde/O=MAJKILDE</text></item>
+<item name="$palmSource"><text>template=Design;title=Design 6.9.5 NTF;filename=c:\notes\data\templates\design.nsf;server=;</text></item></note>

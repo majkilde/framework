@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><note class="form" maintenanceversion="1.0" replicaid="C12579E700306BE2" version="9.0" xmlns="http://www.lotus.com/dxl">
+<noteinfo noteid="20e" sequence="26" unid="546F02B2832CC2ECC12570670071237E">
+<created><datetime dst="true">20050824T223546,54+02</datetime></created>
+<modified><datetime dst="true">20120421T104856,48+02</datetime></modified>
+<revised><datetime dst="true">20110824T145127,48+02</datetime></revised>
+<lastaccessed><datetime dst="true">20120421T104856,48+02</datetime></lastaccessed>
+<addedtofile><datetime dst="true">20120421T104856,48+02</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=SERVER/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=DK/OU=Visitor/O=PwC</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=SERVER/O=MAJKILDE</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=SERVER/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name></wassignedby>
+<item name="$FlagsExt" sign="true"><text>D</text></item>
+<item name="$ImagesHigh" sign="true"><number>1</number></item>
+<item name="$ImagesColorize" sign="true"><number>0</number></item>
+<item name="$TITLE" sign="true"><textlist><text>actionButtonBackground.gif</text><text>actionButtonBackground</text></textlist></item>
+
+
+<item name="$MimeType" sign="true"><text>image/gif</text></item>
+<item name="$FileModDT" sign="true"><datetime dst="true">20050824T224140,20+02</datetime></item>
+<item name="$ImageNames" sign="true"><text>actionButtonBackground.gif</text></item>
+<item name="$Flags"><text>34CiQ</text></item>
+<item name="$ImagesWide" sign="true"><number>1</number></item>
+<item name="$DesignerVersion" sign="true"><text>6.5</text></item>
+<item name="$Comment"><text>Rev 6.6</text></item></note>

@@ -1,0 +1,252 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Public
+Option Declare
+
+Use "cls.document"
+
+
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class ProfileHandler As AbstractObject
+Declare Class AgentHandler As AbstractObject
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+Class ProfileHandler As AbstractObject
+'##########################################################################
+	Private db As NotesDatabase
+	Private view As NotesView
+	Private profile As NotesDocument	
+	Private doc As NotesDocument
+		
+	Private items As Variant
+	Private id As String 'the key to a record/entry
+	Private dataItem As NotesRichTextItem 	'all agent data is stored in one field. 
+											'Syntax: id#item1#item2#....
+	Private data List As string					'the actual data
+	Private entry As String 'the current entry/record
+	
+	
+	Sub new() 'load the profile document into memory
+	'-------------------------------------------------------------------------------------------------------------------------
+		Set db = session.currentDatabase
+		Set view = db.GetView( "lookupAgentsById" )
+		items = Split( "sendScheduleError,sendScheduleIgnoreDisabled,sendLogError,sendSeverity,sendto,replicate", "," ) 'note - only append to the list
+		
+		Set profile = db.GetProfileDocument( "AgentSettings" )
+		Set dataItem = profile.Getfirstitem( "data" )
+		If dataItem Is Nothing Then Set dataItem = profile.Createrichtextitem("data")
+		
+		Dim iEnd As Long
+		Dim iStart As String
+		Dim dataString As String
+		Dim s As String
+		dataString = dataItem.Getunformattedtext()
+		
+		iStart = 1
+		iEnd = InStr( dataString, "^^" )
+		Do While iEnd > 0
+			s = Mid( dataString, iStart, iEnd-iStart )
+			s = Replace( s, Chr( 10 ), "" )
+			s = Replace( s, Chr( 13 ), "" )
+			
+			data( StrLeft( s, "#" )) = StrRight( s, "#" )
+			iStart = iEnd+2
+			iEnd = InStr( iStart, dataString, "^^" )
+		Loop
+		
+	End Sub
+	
+	%REM
+		Load the current agent document
+	%END REM
+	Function loadDoc( doc As NotesDocument )
+	'-------------------------------------------------------------------------------------------------------------------------
+		Set Me.doc = doc
+
+		id = StrLeft( doc.id( 0 ), "#" )& "." & doc.replicaId( 0 )
+		
+		If IsElement( data( id )) Then
+			entry = data( id )
+		Else
+			entry = ""
+		End if
+	End Function
+	
+	%REM
+	Update the current document with values from the profile
+	%END REM
+	Function readProfile( ) As Boolean
+	'-------------------------------------------------------------------------------------------------------------------------
+		'read values from profile
+		If profile Is Nothing Then Exit Function
+		If entry = "" Then Exit Function
+		
+		Dim values As Variant
+		Dim i As Integer
+		values = Split( entry, "#" )
+		
+		Dim d As New AbstractDocument( doc )
+		
+		For i = 0 To UBound( items )
+			If i > UBound( values ) Then GoTo done 'no more values
+			Call d.setItem(items( i ), Split( values( i ), ";" ))
+		Next
+		
+DONE:		
+		If d.isDirty Then
+			Call d.save()
+			readProfile = true
+		Else
+			readProfile = False
+		End If
+	End Function
+	
+	%REM
+	Upload values. Update the profile document with values from the current document
+	%END REM
+	Function updateProfile( ) As Boolean
+	'-------------------------------------------------------------------------------------------------------------------------
+		'save values to profile
+		If profile Is Nothing Then Exit Function
+		Dim d As New AbstractDocument( profile )
+		
+		Dim newEntry As String
+		'newEntry = id 
+		
+		Forall item In items
+			If newEntry = "" Then
+				newEntry = Join( doc.GetItemValue( item ), ";" )
+			else
+				newEntry = newEntry & "#" & Join( doc.GetItemValue( item ), ";" )
+			End if
+		End ForAll
+		
+		If newEntry <> entry Then
+			data( id ) = newEntry
+						
+			Call save()
+			updateProfile = True
+			
+		'update agent documents on other servers
+			Dim coll As NotesDocumentCollection
+			Dim target As NotesDocument
+			
+			Set coll = view.GetAllDocumentsByKey( id, False )
+			Set target = coll.GetFirstDocument
+			Do Until target Is Nothing
+				If target.IsDeleted Then Goto NEXTDOC
+				If target.HasItem( "$conflict" ) Then Goto NEXTDOC
+				If Not target.IsValid Then Goto NEXTDOC
+				If target.UniversalID = doc.UniversalID Then Goto NEXTDOC
+				
+				ForAll item In items
+					Call target.Replaceitemvalue(item, doc.Getitemvalue(item))
+				End ForAll
+				Call target.save( True, False )
+				
+NEXTDOC:
+				Set target = coll.GetNextDocument( target )
+			Loop
+		Else
+			updateProfile = False
+		End If
+	End Function
+	
+	
+	%REM
+		Function save
+		Description: Comments for Function
+	%END REM
+	Function save()
+	'-------------------------------------------------------------------------------------------------------------------------
+		Call profile.Removeitem("data")
+		Set dataItem = profile.Createrichtextitem("data")
+		
+		ForAll entry In data
+			Call dataItem.Appendtext( ListTag( entry ) & "#" & entry & "^^" )
+			Call dataItem.Addnewline(1)	
+		End ForAll		
+		
+		Call profile.save( True, False )
+	End Function
+End Class
+Class AgentHandler As AbstractObject
+	Private db As NotesDatabase
+	Private agent As NotesAgent
+	
+	Private ws As NotesUIWorkspace
+	Private doc As NotesDocument
+	
+	Private dlg As NotesDocument
+	
+	Sub New()
+		Set ws = New NotesUIWorkspace
+		Set doc = ws.CurrentDocument.document
+	End Sub
+	
+	%REM
+		Function openDialog
+		Description: Comments for Function
+	%END REM
+	Function openDialog( server As String, filepath As String, agentname As String )
+		Set dlg = session.Currentdatabase.Createdocument()
+		dlg.server = session.Createname( server ).Common
+		dlg.path = filepath
+		dlg.agentname = agentname
+		If Not loadAgent() Then Exit function
+		
+		Dim msg As string
+		If ws.Dialogbox("dlgAgent", True, True, True, False, False, False, "Enable/disable agent", dlg, True, True ) Then
+			If agent.Isenabled And dlg.status( 0 ) = "0" Then
+				agent.Isenabled = False
+				msg = "Agent disabled. "
+			ElseIf Not agent.Isenabled And dlg.status( 0 ) = "1" Then
+				agent.Isenabled = True
+				msg = "Agent enabled. "
+			End If
+			
+			If agent.Servername <> dlg.machinename( 0 ) Then
+				agent.servername = dlg.machinename( 0 )
+				msg = msg & "New machine: " & agent.servername
+			End If
+			
+			If msg <> "" Then
+				MsgBox msg, 64, "Agent settings changed"
+			End If
+		End If
+	End Function
+	
+	Private Function loadAgent() As Boolean
+		loadAgent = False
+		Set db = session.GetDatabase( dlg.server( 0 ), dlg.path( 0 ))
+		If Not db.isOpen Then MsgBox "Can't open the database", 64, "Error" : Exit Function
+		dlg.title = db.title
+		
+		Set agent = db.getAgent( doc.agentname( 0 ))
+		If agent Is Nothing Then MsgBox "Agent not found", 64, "Error" : Exit Function
+		
+		dlg.comment = agent.Comment
+		dlg.lastrun = agent.LastRun
+		dlg.machinname = agent.ServerName
+		If agent.IsEnabled Then
+			dlg.status = "1"
+		Else
+			dlg.status = "0"
+		End If
+		
+		Select Case agent.Target
+		Case TARGET_ALL_DOCS: dlg.target = "All documents in database"
+		Case TARGET_ALL_DOCS_IN_VIEW: dlg.target = "All documents in view"
+		Case TARGET_NEW_DOCS:
+		Case TARGET_NEW_OR_MODIFIED_DOCS: dlg.target = "All new & modified documents"
+		Case TARGET_NONE: dlg.target = "None"
+		Case TARGET_SELECTED_DOCS: dlg.target = "All selected documents"
+		Case TARGET_UNREAD_DOCS_IN_VIEW: dlg.target = "All unread documents in view"
+		Case TARGET_RUN_ONCE: dlg.target = "Run once"
+		End Select
+		
+		loadAgent = True
+	End Function
+	
+	
+End Class

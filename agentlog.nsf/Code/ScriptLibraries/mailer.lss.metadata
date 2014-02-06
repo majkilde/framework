@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?><note class="filter" maintenanceversion="1.0" replicaid="C1257449003217A2" version="9.0" xmlns="http://www.lotus.com/dxl">
+<noteinfo noteid="e002" sequence="106" unid="2CCC15B264AF6820C125765D0052E883">
+<created><datetime>20091028T160534,75+01</datetime></created>
+<modified><datetime dst="true">20120527T000454,80+02</datetime></modified>
+<revised><datetime dst="true">20120527T000454,79+02</datetime></revised>
+<lastaccessed><datetime dst="true">20120527T000454,79+02</datetime></lastaccessed>
+<addedtofile><datetime>20091028T181411,59+01</datetime></addedtofile></noteinfo>
+<updatedby><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name><name>CN=Jakob Majkilde/O=MAJKILDE</name><name>CN=Jakob Majkilde/OU=NDK/O=GEAP</name><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name></updatedby>
+<wassignedby><name>CN=Jakob Majkilde/OU=Majkilde/O=mths</name></wassignedby>
+<item name="$TITLE" sign="true"><text>mailer</text></item>
+<item name="$Flags"><text>s34Q</text></item>
+<item name="$PublicAccess" sign="true"><text>1</text></item>
+<item name="$DesignerVersion" sign="true"><text>8.5</text></item>
+
+
+<item name="$Comment"><text>Rev 6.16</text></item></note>

@@ -1,0 +1,1293 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Public
+Option Declare
+Use "cls.system"
+Use "cls.log.6"
+Use "cls.fw.memo"
+
+%REM
+Rev 6.16 majkilde 27.05.2010
+- Error counter changed from int to long
+Rev 6.15.2 majkilde 15.10.2010
+- Support for 'Execution time limit excedded' errors added
+Rev 6.15.1 majkilde 12.10.2010
+- Fixed a problem with invalid documents in the log.nsf
+Rev 6.15 9.08.2010
+- Also report on error from cls.log before version 6 (reportOnOldLogs method)
+Rev 6.14.1 5.08.2010 majkilde
+- Skip log.nsf errors if reporting is disabled on the agent document
+Rev 6.13.2 27.04.2010 majkilde
+- added an ModifiedDate check - don't report on agents that just have been scheduled
+Rev 6.11 majkilde 6.4.2010
+- get the actual agent and add more verbose info to the report
+Rev 6.8.5 majkilde 9.1.2010
+- better handling of log.nsf errors (Domino 8.5)
+Rev 6.8.4 majkilde 6.1.2010
+- Fixed an error in the runErrorMonitors function
+Rev 6.8.3 majkilde 2.12.09
+- Minor fixes
+Rev 6.8.1 majkilde 19.11.09
+- Only sent to @AgentSigner etc if it is a person (IsUserInNab)
+Rev 6.6b majkilde 21.10.09
+- Fixed some problem in the scheduled error detection
+Rev 6.6 majkilde 08.10.09
+- AgentScanner upgrade	
+Rev 6.5.1 majkilde 1.10.09
+- Fix a problem in the error reporter (terminated agents was not detechted)
+- Fix a problem when resolving recipients on the agent doc
+Rev 6.4 majkilde 22.09.09
+- Copy to option added	
+Rev 6.4 majkilde 15.09.09
+- Better logging
+Rev 6.3.3. majkilde 3.9.09
+- Using sendto names on the agent document
+Rev 6.3.1 majkilde 13.8.09
+- Handle unsupported triggers
+- updated some messages
+- better filter handling
+- autoupdate = false in the log.nsf scanner
+Rev 6.3 majkilde 4.8.09
+- Fixed error message (counter)
+- Added recipient control
+- Let the scheduler check the agent (is the agent/database deleted?)
+- Ignore patterns added for the log.nsf scanner
+Rev 6.2 majkilde 17.6.09
+- Now it works... :-)
+%END REM
+
+Use "DesignUtilities"
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class RecipientResolver As AbstractObject
+Declare Class MemoCollection As AbstractObject
+Declare Class AbstractScanner As AbstractObject
+Declare Class ScanMonitors As AbstractScanner
+Declare Class ScanAgentLogs As AbstractScanner
+Declare Class ScanLogNsf As AbstractScanner
+Declare Sub Initialize
+Declare Function getRecipientsByDoc( agentdoc As NotesDocument ) As Variant
+Declare Function runErrorMonitors()
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+Private DEBUG As Boolean
+
+Private recipientResolver As RecipientResolver
+
+
+'##############################################################################
+'<getAddedToFile>
+Type TIMEDATE
+	Innards(1) As Long
+End Type
+
+Declare Function ConvertTIMEDATEToText% Lib "nnotes" (Byval IntlFormat&, Byval TextFormat&, InputTime As TIMEDATE, Byval retTextBuffer$, Byval TextBufferLength%, retTextLength%)
+Declare Sub NSFNoteGetInfo Lib "nnotes" (Byval hNote&, Byval member%, td As TIMEDATE)
+
+Const NOTE_ADDED_TO_FILE = 13
+Const MAXALPHATIMEDATE = 80
+Class RecipientResolver As AbstractObject
+'##############################################################################
+%REM
+@AgentDocument: Returns the name specified on the Agent Document (in this database)
+@AgentSigner: The signer of the agent (the design element)
+@ACLManager: Sent to all managers of the database
+
+Or you can just type a name, group or [rolename]
+
+Multiple recipients is divided by a comma
+You can add multiple lines. If the first line evaluates to 'none' the the second line is used
+%END REM
+	Private db As NotesDatabase	
+	Private profile As NotesDocument
+	Private view As NotesView
+	
+	Private sendtoCache List As Variant
+	Private copytoCache List As Variant
+	
+	Private nab As NotesDatabase
+	Private nabView As notesView
+	
+	Sub new()
+	'----------------------------------------------------------------------------------------------------------------------------------
+		Set db = session.CurrentDatabase
+		Set profile = db.GetProfileDocument( "Setup" )
+		Set view = db.GetView( "lookupAgentsByName" )
+	End Sub
+	
+	%REM
+		Function isInNab
+		Description: Comments for Function
+	%END REM
+	Function isUserInNab( username As String ) As Boolean
+		If Not debug Then On Error GoTo eh
+
+		If nab Is Nothing Then Set nab = session.Getdatabase( db.server, "names.nsf" )
+		If nabView Is Nothing Then Set nabView = nab.getView( "($Users)" )
+		
+		Dim u As New NotesName( username )
+		Dim nabDoc As NotesDocument
+		Set nabDoc = nabView.Getdocumentbykey( LCase(u.abbreviated), True )
+		
+		isUserInNab = Not (nabDoc Is nothing)
+		
+done:
+		Exit Function
+eh: 
+		isUserInNab = False
+		Call me.logAction( LOG_WARNING_HIGH, getErrorInfo( Me ), Nothing )
+		Resume done 	 
+	End Function
+	
+%REM
+Params: Use the agentdoc OR the agentname, server and file param
+field: sendto or copyto
+%END REM
+	Function resolve( field As String, agentdoc As NotesDocument, agentname As String, agentserver As String, agentfile As String ) As Variant
+	'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		Dim server As NotesName
+		Dim key As String
+		Dim agentdb As NotesDatabase
+		Dim agentnote As NotesDocument
+		
+		Dim acl As NotesACL
+		Dim aclentry As NotesACLEntry
+		
+		If Not agentdoc Is Nothing Then
+			agentname = agentdoc.agentname( 0 )
+			agentserver = agentdoc.server( 0 )
+			agentfile = agentdoc.filepath( 0 )
+		End If
+		
+		'get the key
+		Set server = New NotesName( agentserver )
+		key = Lcase( server.Common & "#" & Replace( agentfile, "\", "/" ) & "#" & agentname )
+		
+		Call Me.logAction( LOG_VERBOSE, parseParams( "Finding %1 recipients for agent %2 in %4 on %3", field, agentname, agentserver, agentfile ), agentdoc )
+		
+		'Use the cache?
+		Select Case field
+		Case "sendto": 
+			If Iselement( sendtoCache( key )) Then 
+				resolve = sendtoCache( key ) 
+				Exit Function
+			End If
+		Case "copyto":
+			If Iselement( sendtoCache( key )) Then 
+				resolve = sendtoCache( key ) 
+				Exit Function
+			End If
+		End Select
+		
+		'get the agent document (if any)
+		If agentdoc Is Nothing Then 
+			Set agentdoc = view.GetDocumentByKey( key, True )
+			Call Me.logAction( LOG_VERBOSE, parseParam( "Agent document found with key: %1", key ), agentdoc )
+		End If
+		
+		'Resolve
+		Dim values As Variant
+		
+		Dim recipients() As String
+		Dim cnt As Integer
+		cnt = 0 
+		Redim recipients( cnt )
+		
+		'check the agent document
+		If Not agentdoc Is Nothing Then
+			If agentdoc.sendto( 0 ) <> "" Then
+				Forall n In agentdoc.sendto
+					If Trim( n ) <> "" Then
+						Redim Preserve recipients( cnt )
+						recipients( cnt ) = n
+						cnt = cnt+1
+					End If
+				End Forall
+			End If
+		End If
+		
+		If cnt > 0 Then 
+			Call Me.logAction( LOG_VERBOSE, parseParams( "%1 recipients found on the agentdoc: %2", cnt, Join( recipients, ", " ), "", "" ), agentdoc )
+			resolve = recipients
+			Goto DONE 'specific receipents found on the agent document. Just use them
+		End If
+		
+		Dim u As string
+		Forall entry In profile.GetItemValue( field )
+			values = Split( entry, "," )
+			Forall recipient In values
+				recipient = Lcase( Trim( recipient ))
+				
+				Select Case recipient
+				Case "@agentdocument"
+					If Not agentdoc Is Nothing Then
+						Forall s In agentdoc.GetItemValue( field )( 0 )
+							If Trim( s ) <> "" Then
+								Redim Preserve recipients( cnt )
+								recipients( cnt ) = s
+								cnt = cnt+1
+							End If
+						End Forall
+					End If
+					
+				Case "@agentsigner"
+					If agentdb Is Nothing Then Set agentdb = session.getDatabase( agentserver, agentfile )
+					If agentDb.IsOpen Then
+						If agentnote Is Nothing Then
+							Set agentnote = GetDesignNoteByName( agentdb, "agent", agentname,  False )
+						End If
+						If Not agentnote Is Nothing Then
+							u = agentnote.GetItemValue( "$Updatedby" )( 0 )
+							If isUserInNab( u ) then
+								Redim Preserve recipients( cnt )
+								recipients( cnt ) = u
+								cnt = cnt+1
+							End if
+						End If
+					End If
+					
+				Case "@aclmanager"
+					If agentdb Is Nothing Then Set agentdb = session.getDatabase( agentserver, agentfile )
+					If agentdb.IsOpen Then
+						
+						Set acl = agentdb.ACL
+						Set aclentry = acl.GetFirstEntry
+						Do Until aclentry Is Nothing
+							If aclentry.Level = ACLLEVEL_MANAGER Then
+								If aclentry.Isgroup Or aclentry.Isperson then							
+									Redim Preserve recipients( cnt )
+									recipients( cnt ) = aclentry.Name
+									cnt = cnt+1
+								End if
+							End If
+							Set aclentry = acl.GetNextEntry( aclentry )
+						Loop
+					End If
+					
+				Case Else
+					If Left( recipient, 1 ) = "[" Then 'role
+						If agentdb Is Nothing Then Set agentdb = session.getDatabase( agentserver, agentfile )
+						If agentdb.IsOpen Then
+							
+							Set acl = agentdb.ACL
+							Set aclentry = acl.GetFirstEntry
+							Do Until aclentry Is Nothing
+								If Not Isnull( Arraygetindex( aclentry.Roles, recipient, 5 )) Then
+									If aclentry.Isgroup Or aclentry.Isperson Then
+										Redim Preserve recipients( cnt )
+										recipients( cnt ) = aclentry.Name
+										cnt = cnt+1
+									End if
+								End If
+								Set aclentry = acl.GetNextEntry( aclentry )
+							Loop
+						End If
+						
+					Else 'name or group
+						If recipient <> "" Then
+							Redim Preserve recipients( cnt )
+							recipients( cnt ) = recipient
+							cnt = cnt+1
+						End If
+					End If
+				End Select
+				
+			End Forall
+			
+			If cnt > 0 Then
+				resolve = recipients
+				Exit Forall
+			End If
+		End ForAll
+		
+		If cnt = 0 Then 'no recipients found. Use default
+			ReDim Preserve recipients( cnt )
+			recipients( cnt ) = profile.lastModifiedBy( 0 )
+			cnt = cnt+1
+		End If
+		
+		Call Me.logAction( LOG_VERBOSE, parseParams( "%1 recipients found on: %2", cnt, Join( recipients, ", " ), "", "" ), agentdoc )
+		
+DONE:
+		Select Case field
+		Case "sendto": sendtoCache( key ) = recipients
+		Case "copyto": copytoCache( key ) = recipients
+		End Select
+		
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	
+End Class
+
+Class MemoCollection As AbstractObject
+	'##############################################################################
+	Private mails List As NotesDocument 'AbstractMemo
+	Private template As String
+	Private db As NotesDatabase
+	Private profile As notesDocument
+	
+	Sub new( template As String )
+		'----------------------------------------------------------------------------------------------------------------------------------
+		Me.template = template	
+		Set db = session.currentDatabase
+		Set profile = db.Getprofiledocument("Setup" )
+	End Sub
+	
+	Function add( recipient As String, msg As String, link As NotesDocument )
+		'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		If recipient = "" Then Exit Function 'no recipient
+		
+		Dim m As NotesDocument
+		Dim sendto As New NotesName( recipient )
+		
+		'get the mail document
+		If Iselement( mails( sendto.Abbreviated )) Then
+			Set m = mails( sendto.Abbreviated )
+		Else
+			Set m = db.Createdocument()
+			m.form = "Memo"
+			m.sendto = sendto.Abbreviated
+			m.copyto = profile.Copyto
+			m.templateId = template
+			m.server = db.Server
+			m.viewIcon = 121
+			m.replicate = 1 'these documents will be replicated
+			
+			Set mails( sendto.Abbreviated ) = m
+		End If
+		
+		'add the message
+		Dim body As NotesRichTextItem
+		Set body = m.GetFirstItem( "body" )
+		If body Is Nothing Then Set body = m.Createrichtextitem("body")
+		If Not link Is Nothing Then		
+			Call body.AppendDocLink( link, "Click to open" )
+			Call body.AppendText( " " )
+		End If
+		Call body.AppendText( msg  )
+		Call body.addNewline( 1 )
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	Function send() As Integer
+		'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		Dim cnt As Integer
+		
+		Forall m In mails
+			If Not m Is Nothing Then
+				Call m.save( True, False )
+				cnt = cnt+1	
+				Call Me.logAction( LOG_NORMAL, parseParam( "Mail created: %1", m.sendto( 0 )), m )
+			End If
+		End Forall
+		send = cnt
+		
+		Call Me.logAction( LOG_NORMAL, parseParam( "%1 mails created", cnt ), Nothing )
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+End Class
+
+Class AbstractScanner As AbstractObject
+	'##############################################################################
+	Private db As NotesDatabase
+	Private errorCnt As double
+	Private profile As NotesDocument
+	'Private mails As MemoCollection
+	Private reportView As NotesView
+	Private reportType As Integer
+	
+	Private agentView As NotesView
+		
+	Sub new()
+		'----------------------------------------------------------------------------------------------------------------------------------
+		Set db = session.currentDatabase
+		Set profile = db.GetProfileDocument( "Setup" )
+		Set reportView = db.getView( "lookupReportsById" )
+	End Sub
+	
+	
+	Function report( agentdoc As NotesDocument, agentname As String, agentserver As String, agentfile As String, msg As String, source As NotesDocument )
+		'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		Dim recipients As Variant
+
+		If InStr( agentname, "|" ) > 0 Then agentname = StrLeft( agentname, "|" )
+		agentname = FullTrim( agentname )
+		
+		agentfile = Replace( agentfile, "/", "\" )
+			
+		If agentdoc Is Nothing Then
+			If agentview Is Nothing Then 
+				Set agentview = db.GetView( "lookupAgentsByName" )
+				Call agentview.refresh()
+			End if
+			dim server as New NotesName( agentserver )
+			Dim key As String
+			key = LCase( server.Common & "#" & Replace( agentfile, "\", "/" ) & "#" & agentname )
+			Set agentdoc = agentview.GetDocumentByKey( key, True )
+			If agentdoc Is Nothing Then
+				Call Me.logAction( LOG_WARNING_LOW, parseParams( "Can't find an agent document with key=%1", key, "", "", "" ), source )
+			End If
+		End If
+		
+		If Not agentdoc Is Nothing And agentfile = "" Then 
+			agentfile = Replace( agentdoc.filepath( 0 ), "/", "\" )
+		End If
+		
+		Select Case reportType
+		Case 1: 'agent log
+		Case 2: 'log.nsf
+			If Not agentDoc Is Nothing Then
+				If agentDoc.sendLogError( 0 ) <> "1" Then
+					'logging is disabled for this agent -> skip
+					GoTo done
+				End if
+			End If
+		Case 3: 'Schedule
+		End Select
+		
+		'check if the database is on the ignore list
+		ForAll pattern In profile.lognsfExcludeDbs
+			pattern = LCase( pattern )
+			If LCase( agentfile ) Like pattern Then
+				'skip this database
+'				Call Me.logAction( LOG_DEBUG, parseParams( "Error found (%1) but report skipped (Ignore pattern: %2)", entry, pattern, "", "" ), profile )
+				Exit Function
+			End If
+		End ForAll
+		
+		If profile.doMail( 0 ) = "1" Then		
+			recipients = recipientResolver.resolve( "sendto", agentdoc, agentname, agentserver, agentfile )
+			If Not Isarray( recipients ) Then 
+				Call Me.logAction( LOG_FAILURE, parseParams( "No recipients found (%1 %2 %3)", agentname, agentserver, agentfile, "" ), agentdoc )
+			Else
+				'Forall recipient In recipients
+				'	Call mails.add( Cstr( recipient ), msg & Chr( 10 ), source )						
+				'End Forall
+			End If	
+			'	recipients = recipientResolver.resolve( "copyto", agentdoc, agentname, agentserver, agentfile )
+			'	Forall recipient In recipients
+			'		Call mails.add( Cstr( recipient ), msg & Chr( 10 ), source )						
+			'	End Forall					
+		End If
+		
+		'<agent>
+		Dim sourceDb As NotesDatabase
+		Dim sourceAgent As NotesAgent
+		Set sourceDb = session.Getdatabase( agentserver, agentfile )
+		If sourceDb.isopen Then
+			Set sourceAgent = sourceDb.Getagent(agentname)
+		End If
+		'</agent>
+		
+		'<report>
+		Dim reportDoc As NotesDocument
+		Dim rtf As NotesRichTextItem
+		Dim id As String
+		If agentdoc Is Nothing Then
+			id = agentname & "#" & session.Createname( agentserver ).Common & "#" & replace( agentfile, "\", "/" )
+		Else
+			id = StrLeft( agentdoc.id( 0 ), "#" ) & "." & agentdoc.replicaid( 0 ) & "." & StrRight( agentdoc.id( 0 ), "#" )
+		End If
+		Set reportDoc = reportView.Getdocumentbykey( id, True )
+		'create new report
+		If reportDoc Is Nothing Then 
+			Set reportDoc = db.Createdocument()
+			reportDoc.form = "Report"
+			reportDoc.id = id
+			reportDoc.replicate=1
+			reportDoc.viewIcon = 12
+			
+			reportDoc.createdBy = db.Title
+			reportDoc.createdOn = db.Server
+			
+			Call reportDoc.Replaceitemvalue("$ConflictAction", "3" )
+			
+			reportDoc.agentname = agentname
+			reportDoc.server = agentserver
+			reportDoc.filepath = Replace( agentfile, "/", "\" )
+			
+			If Not sourceagent Is Nothing Then
+				reportDoc.lastrun = sourceAgent.Lastrun
+			End If
+			
+			If Not sourceDb Is nothing Then
+				If sourceDb.isOpen then
+					reportDoc.replicaid = sourceDb.Replicaid
+					reportDoc.dbTitle = sourceDb.title
+				End if
+			End If
+			
+			Set rtf = reportDoc.Createrichtextitem("link")
+			
+			If Not agentDoc Is Nothing then
+				Call rtf.Appenddoclink( agentdoc, "Click to open the agent document" )
+				reportDoc.dbTitle = agentDoc.dbTitle
+			End If
+			
+			reportDoc.mailSequence = 0
+			reportDoc.sequence = 0 
+			Call reportDoc.save( True, False )
+			Call reportView.refresh			
+		End If
+		
+		reportDoc.sendto = recipients
+
+		'add msg the the report
+		reportDoc.sequence = reportDoc.sequence( 0 ) + 1
+		
+		Dim entry As String
+		Dim logtime As Variant
+		If source Is Nothing Then
+			logtime = Now
+		Else
+			logtime = source.Lastmodified
+		End If 
+		entry = reportDoc.sequence( 0 ) & "#" & reportType & "#" & Format( logtime, "yyyy-mm-dd hh:nn" ) & "#" & cTxt( msg ) & "#" & cLink( source) 
+		
+		Dim logItem As NotesItem
+		Set logItem = reportDoc.getFirstItem( "log" )
+		If logItem Is Nothing Then
+			Set logItem = reportDoc.Replaceitemvalue( "log", entry )
+		Else
+			Call logItem.Appendtotextlist(entry)
+		End If
+		
+		'remove handled messages
+		Dim v As Variant
+		v = logItem.Values
+		If IsArray( v ) then
+			Dim i As Integer
+			For i = 0 To UBound( v )
+				If Clng( StrLeft( v( i ), "#" )) < reportDoc.mailSequence( 0 ) Then
+					v( i ) = ""
+				Else
+					Exit for
+				End If
+			Next
+			logItem.values = v
+		End If
+		
+		'save
+		Call reportDoc.save( True, False )
+
+		'</report>
+		
+		If profile.doLog( 0 ) = "1" Then
+			Call Me.logAction( LOG_FAILURE, "Reporter: " & msg, source )
+		Else
+			Call Me.logAction( LOG_NORMAL, "Reporter: " & msg, source )
+		End If
+		
+		If profile.doEvent( 0 ) = "1" Then
+			Dim l As New NotesLog( "Reporter" )
+			Call l.LogEvent( msg, "", EV_MISC, SEV_FATAL )
+			Call l.Close()
+			Print "Reporter: " & msg
+		End If
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	%REM
+		Function getCount
+		Description: Comments for Function
+	%END REM
+	Public Function getCount() As Long
+		getCount = errorCnt
+	End Function
+	
+	Private Function cLink( o As NotesDocument ) As String
+		'----------------------------------------------------------------------------------------------------------------------------------
+		cLink = session.Createname( o.Parentdatabase.Server ).common & "!" & o.Parentdatabase.Replicaid & "!" & o.Universalid
+	End Function
+	
+	%REM
+		Function cTxt
+		Description: Comments for Function
+	%END REM
+	Private Function cTxt( s As String ) As String
+		'----------------------------------------------------------------------------------------------------------------------------------
+		s = Replace( s, "|", "" )
+		s = Replace( s, Chr( 10 ), " " )
+		s = Replace( s, Chr( 13 ), "" )
+		cTxt = s
+	End Function
+End Class
+
+Class ScanMonitors As AbstractScanner
+	'##############################################################################
+	Private currentServer As NotesName
+	
+	Sub new()
+		'----------------------------------------------------------------------------------------------------------------------------------
+		'Set mails = New MemoCollection( "ERROR.SCHEDULE" )
+		reportType = 3
+		Set currentServer = New NotesName( db.Server )
+	End Sub
+	
+	Function run( )
+		'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		Dim session As New NotesSession
+		
+		Call Me.logAction( LOG_NORMAL, "Starting Schedule scanner", Nothing )
+		
+		Dim view As NotesView
+		Set view = db.GetView( "lookupAgentsByActiveServer" )
+		
+		Dim coll As NotesDocumentCollection
+		Dim doc As NotesDocument
+		
+		Set coll = view.GetAllDocumentsByKey( Lcase( currentServer.Abbreviated ), True )
+		Set doc = coll.GetFirstDocument
+		Call Me.logAction( LOG_NORMAL, parseParams( "Checking %1 agents on %2", coll.Count, Replace( currentServer.Common, "*", "all servers" ), "", "" ), Nothing )
+		
+		Do Until doc Is Nothing
+			If doc.IsDeleted Then Goto NEXTAGENT
+			If Not doc.IsValid Then Goto NEXTAGENT
+			If doc.HasItem( "$conflict" ) Then Goto NEXTAGENT
+			
+			If doc.machinename( 0 ) = "*" Or doc.location( 0 ) = "any" Then
+				'run on every server
+			Else
+				'check if agent is scheduled to run on this server
+				If doc.machinename( 0 ) = "" Then
+					If LCase( session.createName( doc.servername( 0 )).abbreviated ) <> LCase( currentServer.Abbreviated ) Then GoTo NEXTAGENT
+				Else
+					If LCase( session.createName( doc.machinename( 0 )).abbreviated ) <> LCase( currentServer.Abbreviated ) Then GoTo NEXTAGENT
+				End If
+			End If
+			
+			Call checkSchedule( doc ) 
+			
+NEXTAGENT:
+			Set doc = coll.GetNextDocument( doc )
+		Loop
+DONE:
+		If errorCnt > 0 Then
+			Call Me.logAction( LOG_NORMAL, parseParam( "%1 agents didn't run as scheduled", errorCnt ), Nothing )
+		Else
+			Call Me.logAction( LOG_NORMAL, parseParam( "Success: All agents ran as scheduled", errorCnt ), Nothing )
+		End If
+		'Call mails.send()
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+		
+	End Function
+	
+	Function checkSchedule( doc As NotesDocument )
+		'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		Dim msg As String
+		
+		If doc.sendScheduleIgnoreDisabled( 0 ) = "1" Then 'skip disabled or new?
+			If doc.ScheduleInfo( 0 ) = "Disabled" Then GoTo done 'agent is disabled
+			If Today-doc.lastRun( 0 ) > 1000 Then GoTo done 'agent has never run
+		End If
+		
+		'find out when the agent should be running
+		Dim d As New NotesDateTime("")
+		d.LSLocalTime = Now
+		
+		Select Case doc.interval( 0 )
+		Case "H" 'hourly
+			If doc.weekends( 0 ) = "0" Then
+				Call d.AdjustDay( -3 )
+			Else
+				Call d.AdjustDay( -1 )
+			End If
+			Call d.AdjustHour( -5 ) 'safety margin
+			
+			If doc.AgentScanner( 0 ) = "1" Then 'agent document updated by daily scanner
+				Call d.AdjustHour( -36 ) 'safety margin
+			End If
+			
+		Case "D" 'daily
+			If doc.weekends( 0 ) = "0" Then
+				Call d.AdjustDay( -3 )
+			Else
+				Call d.AdjustDay( -1 )
+			End If
+			
+			Call d.AdjustHour( -12 ) 'safety margin
+			
+		Case "W" 'weekly
+			Call d.AdjustDay( -7 )
+			Call d.AdjustHour( -24 ) 'safety margin
+			
+		Case "M" 'monthly
+			Call d.AdjustMonth( -1 )			
+			Call d.AdjustHour( -48 ) 'safety margin
+			
+		Case Else
+			'trigger not supported
+			Call Me.logAction( LOG_NORMAL, parseParams( "%1: Trigger not supported. Schedule checking disabled (in '%2')", doc.agentname( 0 ), doc.dbTitle( 0 ), doc.filepath( 0 ), ""  ), doc )
+			Call doc.RemoveItem( "sendScheduleError" )
+			Call doc.Save( True, False )
+			Goto done 
+		End Select
+		
+		'27.04.2010 majkilde: added an ModifiedDate check - don't report on agents that just have been scheduled
+		If doc.lastrun( 0 ) < d.LSLocalTime And doc.agentModifiedDate( 0 ) < d.LSLocalTime Then
+			
+			'agent didn't run within scheduling limits
+			'check if the agent/database still exits
+			
+			Dim sourceDb As NotesDatabase
+			On Error Resume next
+			Set sourceDb = session.GetDatabase( doc.server( 0 ), doc.filepath( 0 ))
+			If Not debug Then On Error GoTo eh
+			If Not sourceDb.IsOpen Then 'can the database be opened?
+				If doc.LastModified < ( Today-30 ) Then
+					Call Me.logAction( LOG_NORMAL, parseParams( "Can't open the '%1' database (%2). Agent document is deleted", doc.dbTitle( 0 ), doc.filepath( 0 ), "", "" ), Nothing )
+				Elseif doc.sendScheduleError( 0 ) = "1" Then
+					Call Me.logAction( LOG_WARNING_LOW, parseParams( "Agent '%3' has not run since %4, but I cant open the database (%2). No report made (agent ignored) ", doc.dbTitle( 0 ), doc.filepath( 0 ), doc.agentname( 0 ), doc.lastrun( 0 )), doc )
+				End If
+				Goto done 'don't report anything
+			End If
+			
+			'check the agent
+			Dim sourceAgent As NotesAgent
+			On Error Resume next
+			Set sourceAgent = sourceDb.GetAgent( doc.agentname( 0 ))
+			if not debug then On Error Goto eh
+			If sourceAgent Is Nothing Then
+				If Err > 0 Then
+					Call Me.logAction( LOG_WARNING_LOW, parseParams( "Error reading agent: '%2' in '%1': %3 %4 ", doc.dbTitle( 0 ), doc.agentname( 0 ), Err, Error ), doc )
+				elseIf doc.LastModified < ( Today-30 ) Then
+					Call Me.logAction( LOG_NORMAL, parseParams( "Can't find the agent '%3' in '%1' database (%2). Agent document is deleted", doc.dbTitle( 0 ), doc.filepath( 0 ), doc.agentname( 0 ), "" ), Nothing )
+				Elseif doc.sendScheduleError( 0 ) = "1" Then
+					Call Me.logAction( LOG_WARNING_LOW, parseParams( "Agent '%3' has not run since %4, but I cant find the agent - it might be deleted?. No report made (agent ignored) ", doc.dbTitle( 0 ), doc.filepath( 0 ), doc.agentname( 0 ), doc.lastrun( 0 )), doc )
+				End If
+				Goto done 'don't report anything
+			Else
+					If sourceAgent.lastrun < d.LSLocalTime Then
+						'yes - this agent has not run on time. Please report
+					Else
+						'agent has run - but the agent doc wasn't updated
+						Call me.logAction(LOG_VERBOSE, "Agent did run on time - but agent doc is not updated", Nothing )
+						GoTo done
+					End If
+			End If
+			
+			msg = parseParams( "Agent has not run since %2 (Scheduled to run: %3)", doc.agentname( 0 ), Format( doc.lastrun( 0 ), "dd. mmm yyyy hh:nn" ), doc.scheduleInfo( 0 ), doc.dbtitle( 0 ) )
+			If doc.sendScheduleError( 0 ) = "1" Then
+				errorCnt=errorCnt+1
+				Call report( doc, doc.agentname( 0 ), doc.server( 0 ), doc.filepath( 0 ), msg, doc )
+			End If
+		End If
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+End Class
+'</getAddedToFile>
+
+Class ScanAgentLogs As AbstractScanner
+	'##############################################################################
+	Private cntLogDocumentsWithErrors As Long
+	
+	Private cutoff As Variant
+	Private logview As NotesView
+	
+	
+	Sub new()
+		'----------------------------------------------------------------------------------------------------------------------------------
+		'Set mails = New MemoCollection( "ERROR.AGENTS" )
+		reportType = 1
+	End Sub
+	
+	Function run()
+		'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		Set logview = db.GetView( "lookupLogsByMonitorUnid" )
+		
+		cutoff = session.CurrentAgent.LastRun
+		If Not session.CurrentAgent.hasRunSinceModified Then cutoff = Now-1 'yesterday
+		If DEBUG Then cutoff = Now-1 'yesterday
+		
+		Call Me.logAction( LOG_NORMAL, parseParam( "Starting Agent Log Scanner., Cutoff date: %1", cutoff ), Nothing )
+		
+		Dim view As NotesView
+		Set view = db.GetView( "lookupAgentsByActiveServer" )
+		
+		Dim coll As NotesDocumentCollection
+		Dim doc As NotesDocument
+		Dim server As New NotesName( db.server )
+		
+		Set coll = view.GetAllDocumentsByKey( Lcase( server.Abbreviated ), True )
+		Set doc = coll.GetFirstDocument
+		Call Me.logAction( LOG_NORMAL, parseParams( "Checking %1 agents on %2", coll.Count, Replace( server.Common, "*", "all servers" ), "", "" ), Nothing )
+		
+		Do Until doc Is Nothing
+			If doc.IsDeleted Then Goto NEXTAGENT
+			If Not doc.IsValid Then Goto NEXTAGENT
+			If doc.HasItem( "$conflict" ) Then Goto NEXTAGENT
+			
+			If doc.sendLogError( 0 ) = "1" Then
+				'error reporting is enabled - > check the document
+				If Not checkLog( doc ) Then
+					cntLogDocumentsWithErrors = cntLogDocumentsWithErrors+1
+				End If
+			End If
+			
+NEXTAGENT:
+			Set doc = coll.GetNextDocument( doc )
+		Loop
+DONE:
+		Call reportOnOldLogs()
+		
+		If errorCnt > 0 Then
+			Call Me.logAction( LOG_NORMAL, parseParams( "%1 agents reported errors (in %2 log documents)", errorCnt, cntLogDocumentsWithErrors, "", "" ), Nothing )
+		Else
+			Call Me.logAction( LOG_NORMAL,  "Success: No errors found" , Nothing )
+		End If
+		'Call mails.send()
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+		
+	End Function
+	
+	Function getAddedToFile(doc As NotesDocument) As NotesDateTime
+		'---------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		' --- This is the actual function
+		Dim td As TIMEDATE
+		Dim tdStr$
+		Dim cbStr%
+		Dim dt As NotesDatetime
+		
+		' --- using hidden "Handle" property in NotesDocument class, grab TIMEDATE 
+		NSFNoteGetInfo doc.Handle, NOTE_ADDED_TO_FILE, td
+		
+		' --- convert TIMEDATE to a string using standard "current" settings
+		tdStr$ = String$(MAXALPHATIMEDATE + 1, 0)
+		ConvertTIMEDATEToText 0&, 0&, td, tdStr$, MAXALPHATIMEDATE, cbStr%
+		
+		' --- return the string to the caller
+		'GetAddedToFileStr = Left$(tdStr$, cbStr%)
+		
+		' --- return the NotesDateTime to the caller	
+		set dt = new NotesDateTime( Left$(tdStr$, cbStr%) )
+		Set GetAddedToFile = dt
+		
+done:
+		Exit Function
+eh:
+		'something went wrong - just use the created date
+		Set dt = New NotesDateTime("")
+		dt.Lslocaltime = doc.Created
+		Set GetAddedToFile = dt
+		
+		Resume done
+		'Error Err, getErrorInfo( Me )
+	End Function 
+	
+	%REM
+		Function reportOnOldLogs
+		Find log documents created by cls.log before version 6.x
+	%END REM
+	Function reportOnOldLogs() As Boolean
+		If Not debug Then On Error GoTo eh
+		
+		Dim coll As NotesDocumentCollection
+		Dim query As String
+		Dim dt As New NotesDateTime( "" )
+		dt.lslocaltime = cutoff
+		query = {form="Log" & monitorUnid="" & (status="3" | severity!="0")}
+		Set coll = db.search( query, dt, 0 )
+		
+		Call me.logAction(LOG_NORMAL, parseParam("%1 errors reported by an older version of cls.log", coll.count), nothing)
+		
+		Dim logdoc As NotesDocument
+		Dim server As NotesName
+		Dim msg As String
+		Set logdoc = coll.Getfirstdocument()
+		Do Until logdoc Is Nothing
+			If logdoc.Isdeleted Then GoTo nextdoc
+			If Not logdoc.Isvalid Then GoTo nextdoc
+			If logdoc.Hasitem("$conflict") Then GoTo nextdoc
+			
+			Set server = New NotesName( logdoc.dbserver( 0 ))
+			If logdoc.status( 0 ) = "2" Or logdoc.status( 0 ) = "3" Then
+				'agent stopped
+				msg = parseParams( "Agent '%1' in '%2' on %4 couldn't complete. Error: %3", logdoc.agentname( 0 ), logdoc.agentDbTitle( 0 ), logdoc.msg( 0 ), server.Common )
+			ElseIf CStr( logdoc.severity( 0 )) = "" Then				
+				'no errors / no logs - just skip this
+			Else
+				'agent reported an error
+				msg = parseParams( "Agent '%1' in '%2' on %4 reported an error: %3", logdoc.agentname( 0 ), logdoc.agentDbTitle( 0 ), logdoc.msg( 0 ), server.Common )
+			End If
+			
+			
+			If msg <> "" Then
+				Call report( nothing, logdoc.agentname( 0 ), logdoc.agentDbserver( 0 ), logdoc.agentDbfilepath( 0 ), msg, logdoc )
+				
+				errorCnt=errorCnt+1
+				reportOnOldLogs = false
+			End if
+			
+nextdoc:
+			Set logdoc = coll.Getnextdocument( logdoc )
+		Loop
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	Function checkLog( doc As NotesDocument ) As Boolean
+		'----------------------------------------------------------------------------------------------------------------------------------
+		'doc is the monitor document
+		if not debug then On Error Goto eh
+		Dim msg As String
+		'Dim added As NotesDateTime
+		Dim server As NotesName
+		
+		checkLog = True
+		
+		Dim nav As NotesViewNavigator
+		Dim entry As NotesViewEntry
+		Dim logdoc As NotesDocument
+		Set nav = logview.CreateViewNavFromCategory( doc.UniversalID )
+		Set entry = nav.GetFirst
+		Do Until entry Is Nothing
+			If Not entry.IsValid Then Goto NEXTENTRY
+			If entry.IsConflict Then Goto NEXTENTRY
+			If Not entry.IsDocument Then Goto NEXTENTRY
+			
+			Set logDoc = entry.Document
+			
+			
+			'Set added = getAddedToFile( logDoc )
+			If logDoc.Lastmodified < cutoff Then 'Dadded.LSLocalTime < cutoff Then
+				'all done - skip the rest
+				Exit Function
+			End If
+			
+			'check the document
+			msg = ""
+			
+			If logdoc.type( 0 ) = "" Then
+				'this is a document created by the NotesLog class
+				If logdoc.GetItemValue( "A$LOGTYPE" ) = "Error" Then
+					msg = parseParams( "Error in  %1: %2", logdoc.GetItemValue( "A$PROGNAME" )( 0 ), logDoc.getitemvalue( "A$ERRMSG" )( 0 ), "", "" )
+				End If
+			Else
+				Set server = New NotesName( logdoc.dbserver( 0 ))
+				If logdoc.status( 0 ) = "2" Or logdoc.status( 0 ) = "3" Then
+					'agent stopped
+					msg = parseParams( "Agent '%1' in '%2' on %4 couldn't complete. Error: %3", logdoc.agentname( 0 ), logdoc.agentDbTitle( 0 ), logdoc.msg( 0 ), server.Common )
+				Elseif Cstr( logdoc.severity( 0 )) = "" Then				
+					'no errors / no logs - just skip this
+				Elseif Cstr( logdoc.severity( 0 )) < Cstr( doc.sendSeverity( 0 )) Then
+					'agent reported an error
+					msg = parseParams( "Agent '%1' in '%2' on %4 reported an error: %3", logdoc.agentname( 0 ), logdoc.agentDbTitle( 0 ), logdoc.msg( 0 ), server.Common )
+				End If
+			End If
+			
+			If msg <> "" Then
+				Dim agentdoc As notesDocument
+				On Error Resume Next
+				Set agentdoc = db.GetDocumentByUNID( doc.monitorUnid( 0 ))
+				On Error Goto 0
+							
+				Call report( agentdoc, doc.agentname( 0 ), doc.server( 0 ), doc.filepath( 0 ), msg, doc )
+				'also works: Call report( agentdoc, logdoc.agent( 0 ), logdoc.agentDbServer( 0 ), logdoc.agentDbFilepath( 0 ), msg, doc )
+				
+				errorCnt=errorCnt+1
+				checkLog = False
+			End If
+			
+NEXTENTRY:
+			Set entry = nav.GetNext( entry )
+		Loop
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+End Class
+
+Class ScanLogNsf As AbstractScanner
+	'##############################################################################
+	
+	Sub new()
+		'----------------------------------------------------------------------------------------------------------------------------------
+		'Set mails = New MemoCollection( "ERROR.LOG" )
+		reportType = 2
+	End Sub
+	
+	Function run()
+		'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		
+		Dim session As New NotesSession
+		
+		Dim cutoff As Variant
+		cutoff = session.CurrentAgent.LastRun
+		If Not session.CurrentAgent.hasRunSinceModified Then cutoff = Now-1 'yesterday
+		If DEBUG Then cutoff = Now-1 'yesterday
+		
+		Call Me.logAction( LOG_NORMAL, parseParam( "Scanning log.nsf for agent errors. Cutoff date: %1", cutoff ), Nothing )
+		
+		Dim lognsf As NotesDatabase
+		Set lognsf = session.GetDatabase( db.Server, "log.nsf" )
+		
+		Dim logview As NotesView
+		Set logview = lognsf.GetView( "MiscEvents" )
+		logview.AutoUpdate = False
+		
+		Dim nav As NotesViewNavigator
+		Set nav = logview.CreateViewNav
+		
+		Dim entry As NotesViewEntry
+		Set entry = nav.GetLast
+		
+		Dim doc As NotesDocument
+		
+		Do Until entry Is Nothing
+			If entry.IsCategory Then Goto NEXTENTRY
+			If entry.IsConflict Then Goto NEXTENTRY
+			If Not entry.IsValid Then Goto NEXTENTRY
+			If Not entry.IsDocument Then Goto NEXTENTRY
+			
+			Set doc = entry.Document
+			If doc Is Nothing Then GoTo NEXTENTRY
+			If Not doc.Isvalid Then GoTo NEXTENTRY
+			If doc.Isdeleted Then GoTo NEXTENTRY
+				
+			If doc.starttime( 0 ) < cutoff Then Goto NEXTENTRY 'have checked all the rest....
+			
+			Call scanDocument( doc )
+			
+NEXTENTRY:
+			Set entry = nav.GetPrev( entry )
+		Loop
+		
+		logview.AutoUpdate = True
+		
+		
+DONE:
+		Call Me.logAction( LOG_NORMAL, parseParam( "%1 errors found in the log.nsf", errorCnt ), Nothing )
+		
+		'Call mails.send()
+		
+		Exit Function
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+	
+	Function logEntry( entry As String, doc As NotesDocument )
+		'----------------------------------------------------------------------------------------------------------------------------------
+		Dim agentserver As String
+		Dim agentname As String
+		Dim agentfile As String
+		
+		agentserver = db.Server
+		
+		Dim s As String
+		s = Strleftback( Strright( entry, |'| ), |'| )
+		
+		Dim d As String
+		If InStr( 1, s, |' in '|, 5 ) > 0 Then
+			d = |' in '|
+		Else
+			d = |' in database '|
+		End If
+		agentname = StrLeft( s, d, 5 )
+		agentfile = StrRight( s, d, 5 )
+		If InStr( agentfile, |'| ) > 0 Then agentfile = StrLeft( agentfile, |'| )
+		
+		
+		%REM made generaly - moved to the report method
+		'check if the database is on the ignore list
+		Forall pattern In profile.lognsfExcludeDbs
+			agentfile = Replace( Lcase( agentfile ), "/", "\" )
+			pattern = Lcase( pattern )
+			If lcase( agentfile ) Like pattern Then
+				'skip this database
+				Call Me.logAction( LOG_DEBUG, parseParams( "Error found (%1) but report skipped (Ignore pattern: %2)", entry, pattern, "", "" ), profile )
+				Exit Function
+			End If
+		End Forall
+		%ENDREM
+		
+		Dim tmp As NotesDocument
+		Call report( tmp, agentname, agentserver, agentfile, Replace( entry, "\", "/" ), doc )
+	End Function
+	
+	Function scanDocument( doc As NotesDocument )
+		'----------------------------------------------------------------------------------------------------------------------------------
+		if not debug then On Error Goto eh
+		'doc is the current log document (found in log.nsf)
+		Forall entry In doc.eventList
+			If Instr( 1, entry, "AMgr:", 5 ) > 0 Then
+				Forall includeWord In profile.lognsfIncludeWords
+					If Instr( 1, entry, includeWord, 5 ) > 0 Then
+						Forall excludeWord In profile.lognsfExcludeWords
+							If Instr( 1, entry, excludeWord, 5 ) > 0 Then Goto nextentry 'skip this
+						End Forall
+						
+						'log this
+						errorCnt=errorCnt+1
+						Call logEntry( entry, doc ) 
+						Goto nextentry
+					End If
+				End ForAll
+			ElseIf InStr( 1, entry, "Agent Manager: Execution Time limit", 5 ) > 0 Then 'Agent Manager: Execution Time limit 
+				'log this 
+				errorCnt=errorCnt+1 
+				Call logEntry( entry, doc )
+			End If
+nextentry:
+		End Forall
+		
+done:
+		Exit Function
+		
+eh:
+		Error Err, getErrorInfo( Me )
+	End Function
+End Class
+'++LotusScript Development Environment:2:2:Initialize:1:10
+Sub Initialize
+	Dim session As New NotesSession
+	debug = Not session.Isonserver
+	Set recipientResolver = New RecipientResolver()
+End Sub
+
+'++LotusScript Development Environment:2:1:getRecipientsByDoc:1:8
+Function getRecipientsByDoc( agentdoc As NotesDocument ) As Variant
+	'----------------------------------------------------------------------------------------------------------------------------------
+	
+End Function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'++LotusScript Development Environment:2:1:runErrorMonitors:1:8
+Function runErrorMonitors()
+	Dim session As New NotesSession
+	Dim profile As NotesDocument
+	Dim db As NotesDatabase
+	
+	Dim l As New AgentLog( session.CurrentDatabase )
+	Call SystemLog.set( l )
+	
+	if not debug then On Error Goto eh
+	
+	Set db = session.CurrentDatabase
+	Set profile = db.GetProfileDocument( "Setup" )
+	
+	Dim msg As String
+	
+	Forall monitor In profile.enabledMonitors
+		Select Case monitor
+		Case "lognsf"
+			'scan log.nsf
+			Dim logScanner As New ScanLogNsf
+			Call logScanner.run()
+			msg = msg & "Log.nsf: " & logScanner.getCount() & " reports. "
+			
+		Case "agentlog"
+			'check agent logs			
+			Dim agentlogs As New ScanAgentLogs()
+			Call agentlogs.run()
+			msg = msg & "AgentLog: " & agentLogs.getCount() & " reports. "
+			
+		Case "scheduled"
+			'check agent schedules			
+			Dim scheduler As New ScanMonitors()
+			Call scheduler.run( )	
+			msg = msg & "Schedule errors: " & scheduler.getCount() & " reports. "
+		End Select
+		
+NEXTMONITOR:
+	End Forall
+	
+DONE:
+	If msg = "" Then msg = "Nothing to do"
+	Call l.logAction( LOG_NORMAL, msg, Nothing )
+	Call l.close()
+	
+	Exit Function
+eh:
+	Call l.logAction( LOG_FATAL, Err & " " & getErrorInfo( session.CurrentAgent ), Nothing )
+	Resume DONE
+End Function

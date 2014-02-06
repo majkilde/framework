@@ -1,0 +1,311 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+Option Public
+Option Declare
+
+' A library of helper functions useful for programming design elements.
+' By Andre Guirard, 2005
+
+
+%REM
+Script library found on http://www.eview.com/
+Article: Easily manage and distribute Notes 6 and 7 toolbar buttons
+Issue: THE VIEW, January/February 2006, Volume 12, Issue 1 
+Database: Toolbar library
+Developer: Andre Guirard
+Copyright statement in the About document: "This database is made available free of copyright. "
+%END REM
+
+
+%REM Revisions 
+4.92
+	- Support for Shared Columns
+1.02
+	- SetSelection now handles both {script library} and {scriptlibrary}
+1.01
+	- SetSelection now handles both {data connection} and {dataconnection}
+
+%END REM
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Function GetDesignNoteByName(db As notesdatabase, Byval strDesType$, Byval strTitle$, Byval boolFreakIfDup) As NotesDocument
+Declare Sub SetSelection(ncoll As NotesNoteCollection, Byval strDesignType As String)
+Declare Private Function MacroQuote(Byval x As String) As String
+Declare Function GetDesignCollectionXML(elementDescs, db As NotesDatabase) As String
+Declare Function GetDocByUNID(db As notesdatabase, Byval strUNID As String) As NotesDocument
+Declare Function GetDesignNoteByUnidOrName(db As NotesDatabase, Byval strUNID$, Byval strName$, Byval strDesType$) As NotesDocument
+Declare Sub Initialize
+Declare Function ClientID(docDesign As NotesDocument) As String
+Declare Function ClientSearchClause(Byval strClientID$) As String
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+Dim GboolHannover As Boolean 	' True if we're post v7.0
+'++LotusScript Development Environment:2:1:GetDesignNoteByName:14:8
+%REM
+	' Search a database for the first design element that has a given type (e.g. "Form") and name.
+	' Return the design note as a NotesDocument. Handy for manipulating design note items directly
+	' or copying from one database to another.
+	' This routine freaks if there are multiple design elements with the same name, unless
+	' you specify boolFreakIfDup=False
+	' To find design elements in a specific language in a multilingual application, specify the two-letter
+	' language code in [square braces] at the end of strTitle, e.g. "TReport [fr]" to locate the French-
+	' language version of the form whose alias is TReport.
+	' The name might also include a list of which clients this design element works for,
+	' in the form {n.w.m.p} for notes, web, mobile and portal (the latter only used in
+	' release Hannover and later).
+%END REM
+Function GetDesignNoteByName(db As notesdatabase, Byval strDesType$, Byval strTitle$, Byval boolFreakIfDup) As NotesDocument
+	
+	Dim session As New NotesSession
+	Dim ncoll As NotesNoteCollection
+	Dim coll As notesdocumentcollection
+	Dim docDes As notesdocument
+	Dim strKey$, strID$
+	
+	If strDesType = "Profile" Then
+		' Normally one would just use GetProfileDocument for this, but this lets
+		' you search for it without creating it if it doesn't exist.
+		Set coll = db.GetProfileDocCollection(Strleft(strTitle & "/", "/"))
+		Set docDes = coll.GetFirstDocument( )
+		strKey = Strright(strTitle, "/")
+		Do Until docDes Is Nothing
+			If docDes.Key = strKey Then
+				Set GetDesignNoteByName = docDes
+				Exit Function
+			End If
+		Loop
+	Else ' not a profile document
+		Set ncoll = db.CreateNoteCollection(False)
+		SetSelection ncoll, strDesType ' set collection to find only design elements of the specified type
+		Dim aliases As Variant, intInd%
+		Dim strLanguageClause As String, strMatchPart As String, strClients As String
+		
+		If strTitle Like {* (#)} Then
+			strTitle = Left(strTitle, Len(strTitle)-4) ' remove trailing sequence number.
+		End If
+		If strTitle Like |* {*}| Then
+			' the name contains a "clients" clause. Convert it to a logical expression
+			' that matches design elements that work on only the specified clients.
+			strClients = Strleftback(Strrightback(strTitle, "}"), "{")
+			strClients = ClientSearchClause(strClients)
+			strTitle = Strleftback(strTitle, " {")
+		End If
+		If strTitle Like {* [[][a-z][a-z]]} Then
+			' Language specification -- apply to selection.
+			strLanguageClause = { & $Language = "} & Left(Right(strTitle, 3), 2) & {"}
+			strMatchPart = Left(strTitle, Len(strTitle)-4)
+		Else
+			strMatchPart = strTitle
+		End If
+		' the string we're given to match may contain multiple search terms delimited by "|"
+		aliases = Split(strMatchPart, "|")
+		For intInd = Ubound(aliases) To 0 Step -1 ' search for last alias first -- it's supposed to be unique.
+			If strDesType <> "DatabaseScript" And strDesType <> "Actions" Then
+				ncoll.SelectionFormula = { @Explode($TITLE; "|") = } & _
+				MacroQuote(aliases(intInd)) & strLanguageClause & strClients
+			End If
+			ncoll.BuildCollection
+			If ncoll.Count = 1 Then Exit For ' success - unique match
+			If ncoll.Count > 1 And boolFreakIfDup Then
+				Error 20046, {Design element name "} & strTitle & {" matches } & ncoll.Count & _
+				{ } & Lcase(strDesType)
+			End If
+		Next
+		If ncoll.Count = 0 Then Exit Function ' returning Nothing -- not found.
+		strID = ncoll.GetFirstNoteId()
+		Set GetDesignNoteByName = db.GetDocumentByID(strID)
+	End If
+End Function
+
+'++LotusScript Development Environment:2:2:SetSelection:5:8
+%REM
+	' Given the name of a design element type, e.g. "Form", and a note collection,
+	' sets the note collection to select design elements of that type.
+%END REM
+Sub SetSelection(ncoll As NotesNoteCollection, Byval strDesignType As String)
+	' Given the name of a design element type, e.g. "Form", and a note collection,
+	' sets the note collection to select design elements of that type.
+	Select Case Lcase(strDesignType)
+	Case {action}
+		ncoll.SelectActions = True
+	Case {agent}
+		ncoll.SelectAgents = True
+	Case {databasescript}, {database script}
+		ncoll.SelectDatabaseScript = True
+	Case {data connection},{dataconnection}
+		ncoll.SelectDataConnections = True
+	Case {folder}
+		ncoll.SelectFolders = True
+	Case {form}
+		ncoll.SelectForms = True
+	Case {frameset}
+		ncoll.SelectFrameSets = True
+	Case {navigator}
+		ncoll.SelectNavigators = True
+	Case {outline}
+		ncoll.SelectOutlines = True
+	Case {page}
+		ncoll.SelectPages = True
+	Case {profile}
+		ncoll.SelectProfiles = True
+	Case {script library}, {library}, {scriptlibrary}
+		ncoll.SelectScriptLibraries = True
+	Case {sharedfield}, {shared field}
+		ncoll.SelectSharedFields = True
+	Case {subform}
+		ncoll.SelectSubforms = True
+	Case {view}
+		ncoll.SelectViews = True	
+	Case {image}
+		ncoll.SelectImageResources = True
+	Case {stylesheet}
+		ncoll.SelectStyleSheetResources = True
+	Case {sharedcolumn}, {shared column}
+		Call ncoll.SelectAllDesignElements( True )
+		ncoll.SelectionFormula = {@Contains($Flags; "^")}
+	End Select
+End Sub
+'++LotusScript Development Environment:2:1:MacroQuote:4:8
+%REM
+	' Take a string and convert it to a constant expression in macro language source code.
+%END REM
+Private Function MacroQuote(Byval x As String) As String
+	
+	Static fromArr(0 To 1) As String, toArr(0 To 1) As String
+	Dim srcArr(0), result
+	If fromArr(0) = "" Then
+		fromArr(0) = {\}
+		fromArr(1) = {"}
+		toArr(0) = {\\}
+		toArr(1) = {\"}
+	End If
+	srcArr(0) = x
+	result = Replace(srcArr, fromArr, toArr)
+	MacroQuote = {"} + result(0) + {"}
+End Function
+'++LotusScript Development Environment:2:1:GetDesignCollectionXML:6:8
+%REM
+	' Given an array containing descriptions of design elements, return
+	' the DXL string describing those design elements. The design element
+	' descriptions are such as to be recognized by GetDesignNoteByUNIDOrName
+%END REM
+Function GetDesignCollectionXML(elementDescs, db As NotesDatabase) As String
+	
+	Dim session As New NotesSession
+	Dim coll As NotesDocumentCollection
+	Dim strUNID As String, strDesType As String
+	Dim strTitle As String
+	Dim docDesignNote As NotesDocument
+	Dim docTemp As NotesDocument
+	Dim timeNow As New NotesDateTime("")
+	
+	timeNow.SetNow
+	timeNow.AdjustDay 5
+	
+	' create an empty collection to add the design notes to.
+	Set coll = db.Search(" @False ", timeNow, 1)
+	If coll.count > 0 Then 
+		Set docTemp = coll.GetFirstDocument()
+		Call coll.DeleteDocument(docTemp)
+	End If
+	
+	Forall elem In elementDescs
+		' a string in the form "Type: name|UNID" where Type is Form, View, etc.
+		strDesType = Strleft(elem, ":")
+		strUNID = Strrightback(elem, "|")
+		strTitle = Trim(Strleft(Strright(elem, ":"), "|"))
+		Set docDesignNote = GetDocByUNID(db, strUNID)
+		If docDesignNote Is Nothing Then
+			' search by UNID failed -- try search by name.
+			Set docDesignNote = GetDesignNoteByName(db, strDesType, strTitle, True)
+		End If
+		If docDesignNote Is Nothing Then
+			Error 20045, "Design note " & Strleft(Strright(elem, ":"), "|") & " not found (UNID=" & strUNID & ")"
+		End If
+		coll.AddDocument docDesignNote
+	End Forall
+	
+	If coll.Count > 0 Then
+		Dim dxlx As NotesDXLExporter
+		Set dxlx = session.CreateDXLExporter(coll)
+'		dxlx.OutputDOCTYPE = False
+		GetDesignCollectionXML = dxlx.Export
+	End If
+End Function
+'++LotusScript Development Environment:2:1:GetDocByUNID:5:8
+%REM
+	' Try to find a document by its UNID, return Nothing if unable to locate.
+	' This prevents the caller from having to handle the error GetDocumentByUNID returns.
+%END REM
+Function GetDocByUNID(db As notesdatabase, Byval strUNID As String) As NotesDocument
+	
+	On Error Resume Next
+	Set GetDocByUNID = db.GetDocumentByUNID(strUNID)
+End Function
+'++LotusScript Development Environment:2:1:GetDesignNoteByUnidOrName:5:8
+%REM
+	' Get as argument a UNID and a name/design element type (e.g. "Form"). First try to locate a design note with
+	' that UNID. If that fails, try using the name.
+%END REM
+Function GetDesignNoteByUnidOrName(db As NotesDatabase, Byval strUNID$, Byval strName$, Byval strDesType$) As NotesDocument
+	
+	Set GetDesignNoteByUnidOrName = GetDocByUNID(db, strUNID)
+	If GetDesignNoteByUnidOrName Is Nothing Then
+		Set GetDesignNoteByUnidOrName = GetDesignNoteByName(db, strDesType, strName, True)
+	End If
+End Function
+'++LotusScript Development Environment:2:2:Initialize:1:10
+Sub Initialize
+	Dim session As New NotesSession
+	If session.NotesBuildVersion >= 300 Then
+		GboolHannover = True
+	End If
+End Sub
+
+'++LotusScript Development Environment:2:1:ClientID:6:8
+%REM
+	' given a design element, return a string telling which clients it is visible in.
+	' use the letter n for notes client, w for web, p for portal in that order.
+	' If visible to all clients, return ""
+%END REM
+Function ClientID(docDesign As NotesDocument) As String
+	
+	Dim flags$, strShowIn
+	
+	flags = docDesign.GetItemValue("$Flags")(0)
+	If (Instr(flags, "n") = 0) Then strShowIn = ",n"
+	If (Instr(flags, "w") = 0) Then strShowIn = strShowIn & ",w"
+'	If (Instr(flags, "1") = 0) Then strShowIn = strShowIn & ",m"	
+	If (Instr(flags, "2") = 0) Then strShowIn = strShowIn & ",p"
+	
+	If strShowIn <> ",n,w,p" Then
+		' the design element is hidden from one or more clients.
+		If (Not GboolHannover) And Right$(strShowIn, 1) = "p" Then
+			strShowIn = Left$(strShowIn, Len(strShowIn)-2)
+		End If
+		ClientID = " {" & Mid$(strShowIn, 2) & "}"
+	End If
+End Function
+
+'++LotusScript Development Environment:2:1:ClientSearchClause:10:8
+%REM
+	' Create part of the SelectionFormula for a NotesNoteCollection, which will find the design element
+	' whose availability to different clients matches a descriptive string we are given. The string
+	' contains the letters "n", "w" and/or "p", comma-delimited, to say we want design elements that
+	' are visible to Notes client, web, and portal respectively. "p" is only used for Hannover release
+	' and later.
+	
+	' If the string contains only "n", for instance, we want a design element visible _only_ to Notes.
+%END REM
+Function ClientSearchClause(Byval strClientID$) As String
+	Dim strNotes$, strWeb$, strPortal$
+	If strClientID = "" Then Exit Function
+	If Instr(strClientID, "n") Then strNotes = "!"
+	If Instr(strClientID, "w") Then strWeb = "!"
+	If Instr(strClientID, "p") Then strPortal = "!"
+	
+	ClientSearchClause = {& (} + strNotes + {@Contains($Flags, "n")) & (} _
+	& strWeb & {@Contains($Flags, "w"))}
+	If GboolHannover Then
+		ClientSearchClause = ClientSearchClause _
+		& { & (} & strPortal & {@Contains($Flags; "2"))}
+	End If
+End Function

@@ -1,0 +1,257 @@
+'++LotusScript Development Environment:2:5:(Options):0:74
+%REM
+	Library SigmaFiles
+	Created Jul 13, 2010 by Jakob Majkilde/MAJKILDE
+	Description: Comments for Library
+%END REM
+Option Public
+Option Declare
+Use "attachmate6"
+
+
+
+'++LotusScript Development Environment:2:5:(Forward):0:1
+Declare Class SigmaFile As AbstractObject
+Declare Private Class Component As AbstractObject
+
+'++LotusScript Development Environment:2:5:(Declarations):0:10
+%REM
+	Class SigmaFile
+	Description: Comments for Class
+%END REM
+Class SigmaFile As AbstractObject
+	Private doc As NotesDocument
+	Private handle As AbstractHandle
+	
+	Private components() As Component
+	Private cnt As Integer
+	Private current As Component
+	
+	%REM
+		Sub New
+		Description: Comments for Sub
+	%END REM
+	Sub New( doc As NotesDocument, handle As AbstractHandle )
+		Set me.doc = doc
+		Set me.handle = handle
+	End Sub
+	
+	%REM
+		Function mergeDataToFile
+		Description: Comments for Function
+	%END REM
+	Function mergeDataToFile()
+		'start the dom parser
+		
+		Print "Merge to Sigma file"
+		Dim inputStream As NotesStream
+		Set inputStream = session.Createstream()
+		Call inputStream.Open( handle.getFilename())
+		
+		Print "Parsing file"
+		Dim dom As NotesDOMParser
+		Set dom = session.Createdomparser()
+		Call dom.Parse( inputStream )
+		Call inputStream.Close()
+		
+		
+		Call writeTree( dom.Document )
+
+		'output	
+		Print "Saving file: " & handle.getFilename()	
+		Dim outputStream As NotesStream
+		Set outputStream = session.createStream()
+		Call outputStream.open( handle.getFilename())
+		Call outputStream.Truncate()
+		Call dom.Setoutput(outputStream)
+		Call dom.Serialize()
+		Call outputStream.Close()
+		Print ""
+	End Function
+	
+	Sub writeTree ( node As NotesDOMNode )
+		Dim child As NotesDOMNode
+		Dim elt As NotesDOMNode
+		
+		If Not node.IsNull Then  
+			Select Case node.NodeType
+			Case DOMNODETYPE_DOCUMENT_NODE:        ' If it is a Document node
+				Set child = node.FirstChild   ' Get the first node
+				Dim numChildNodes As Integer
+				numChildNodes = node.NumberOfChildNodes
+				
+				While numChildNodes > 0 
+					Set child = child.NextSibling ' Get next node
+					numChildNodes = numChildNodes - 1
+					Call writeTree(child)
+				Wend
+				
+			Case DOMNODETYPE_ELEMENT_NODE:        ' Most nodes are Elements
+				Set elt = node
+				
+				Dim debug As String
+				debug = node.NodeName
+				Select Case node.Nodename
+				Case "ProjectNumber"
+					If node.Haschildnodes Then
+						node.Firstchild.nodeValue = doc.subject( 0 )
+					End If
+			End Select
+				
+				'process subnodes
+				Dim numChildren As Integer
+				numChildren =  elt.NumberOfChildNodes
+				Set child = elt.FirstChild     ' Get child
+				While numChildren > 0
+					Call writeTree(child)
+					Set child = child.NextSibling   ' Get next child
+					numChildren = numChildren - 1
+				Wend
+			End Select  'node.NodeType
+		End If        'Not node.IsNull
+	End Sub
+	
+	%REM
+		Function importDataToDocument
+		Description: Comments for Function
+	%END REM
+	Function importDataToDocument()
+		Print "Reading data from the Sigma file"
+		
+		
+		
+		Dim stream As NotesStream
+		Set stream = session.Createstream()
+		Dim dom As NotesDOMParser
+		Set dom = session.Createdomparser()
+		
+		'start the dom parser
+		Call stream.Open( handle.getFilename())
+		Call dom.Parse(stream)
+		Call stream.Close()
+
+		'process
+		cnt = 0 
+		ReDim components( 0 )
+		
+		Call readTree( dom.Document )
+		
+		'report
+		Print "Found " & cnt & " components"
+		Dim v() As String
+		ReDim v( cnt )
+		
+		Dim i As Integer
+		For i = 0 To cnt-1
+			v( i ) =components( i ).toString()
+		Next
+		
+		Print "Saving"
+		Call doc.Replaceitemvalue("data", v )
+		
+		Print ""
+	End Function
+
+	Sub readTree ( node As NotesDOMNode )
+		Dim child As NotesDOMNode
+		Dim elt As NotesDOMNode
+		
+		If Not node.IsNull Then  
+			Select Case node.NodeType
+			Case DOMNODETYPE_DOCUMENT_NODE:        ' If it is a Document node
+				Set child = node.FirstChild   ' Get the first node
+				Dim numChildNodes As Integer
+				numChildNodes = node.NumberOfChildNodes
+				
+				While numChildNodes > 0 
+					Set child = child.NextSibling ' Get next node
+					numChildNodes = numChildNodes - 1
+					Call readTree(child)
+				Wend
+				
+			Case DOMNODETYPE_ELEMENT_NODE:        ' Most nodes are Elements
+				Set elt = node
+				
+				Dim debug As String
+				debug = node.NodeName
+				If node.NodeName = "Component" Then 'new component
+					ReDim Preserve components( cnt )
+					Set current = New Component()
+					Set components( cnt ) = current
+					cnt = cnt+1
+					
+				Else
+					If Not current Is Nothing Then
+						If node.Haschildnodes then
+							Call current.addValue(node.nodename, node.Firstchild.nodevalue )
+						End if
+					End If
+				End If
+				
+				'process subnodes
+				Dim numChildren As Integer
+				numChildren =  elt.NumberOfChildNodes
+				Set child = elt.FirstChild     ' Get child
+				While numChildren > 0
+					Call readTree(child)
+					Set child = child.NextSibling   ' Get next child
+					numChildren = numChildren - 1
+				Wend
+		End Select  'node.NodeType
+		End If        'Not node.IsNull
+	End Sub
+End Class
+
+
+
+
+%REM
+	Class component
+	Description: Comments for Class
+%END REM
+Private Class Component As AbstractObject
+	Private data List As String
+	
+	%REM
+		Sub New
+		Description: Comments for Sub
+	%END REM
+	Sub New()
+		
+	End Sub
+	
+	%REM
+		Function addValue
+		Description: Comments for Function
+	%END REM
+	Function addValue( valuename As String, value )
+		data( LCase( valuename )) = value
+	End Function
+	
+	%REM
+		Function getValue
+		Description: Comments for Function
+	%END REM
+	Function getValue( valuename As String ) As String
+		If IsElement( data( LCase( valuename ))) Then
+			getValue = data( LCase( valuename ))
+		Else
+			getValue = ""
+		End If
+	End Function
+	
+	%REM
+		Function toString
+		Description: Comments for Function
+	%END REM
+	Function toString() As string
+		Dim s As String
+		s = ""
+		s = s & "name=" & getValue( "name" ) & ";"
+		s = s & "level=" & getValue( "level" ) & ";"
+		s = s & "category=" & getValue( "category" ) & ";"
+		s = s & "cost=" & getValue( "regcostprice" ) & ";"
+		s = s & "unit=" & getValue( "unit" ) & ";"
+		toString = s
+	End Function
+End Class
