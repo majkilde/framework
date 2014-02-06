@@ -137,6 +137,7 @@ Declare Public Function cString( source As Variant ) As String
 Declare Static Public Function SystemLog() As SystemLogObject
 Declare Public Function parseParams( s As String, p1 As Variant, p2 As Variant, p3 As Variant, p4 As Variant ) As String
 Declare Public Function parseParam( s As String, params As Variant ) As String
+Declare 	Function isDocumentValid( doc As NotesDocument ) As Boolean
 
 '++LotusScript Development Environment:2:5:(Declarations):0:10
 %REM
@@ -2388,6 +2389,7 @@ Public Class AbstractScriptObject As AbstractObject
 		GetValue = "ScriptObject not loaded"
 	End Function
 End Class
+
 '++LotusScript Development Environment:2:1:trimCollection:7:8
 
 %REM
@@ -2782,3 +2784,27 @@ End Function
 
 
 
+
+
+
+
+'++LotusScript Development Environment:2:1:isDocumentValid:5:8
+%REM
+		Function isDocumentValid
+		Description: Comments for Function
+	%END REM
+	Function isDocumentValid( doc As NotesDocument ) As Boolean
+		On Error GoTo eh
+		isDocumentValid = False
+		If doc Is Nothing Then Exit Function
+		If doc.Isdeleted Then Exit Function
+		If Not doc.Isvalid Then Exit Function
+		If doc.Hasitem("$conflict") Then Exit Function
+		isDocumentValid = True
+		
+done:
+		Exit Function
+eh:
+		Error Err, getErrorInfo( "" )
+
+	End Function
